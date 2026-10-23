@@ -15,7 +15,8 @@
     "data:update": "node --experimental-strip-types scripts/update-bins.mjs",
     "test:db": "node scripts/test-db.mjs",
     "seed:cloud": "node scripts/seed-cloud.mjs",
-    "seed:stores": "node scripts/generate-demo-stores.mjs"
+    "seed:stores": "node scripts/generate-demo-stores.mjs",
+    "test:functions": "node scripts/test-functions.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

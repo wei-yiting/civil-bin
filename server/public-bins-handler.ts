@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { fetchPublicBins, type BinSnapshot } from '../src/bin-data.ts'
+import { fetchPublicBins, type BinSnapshot } from '../src/bin-data.js'
 
 export function createPublicBinsHandler(fetcher = fetchPublicBins) {
   let cache: { data: BinSnapshot; expiresAt: number } | null = null
