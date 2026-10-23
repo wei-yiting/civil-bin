@@ -1208,3 +1208,35 @@
   white-space: nowrap;
   border: 0;
 }
+
+.size-board-guide {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f0f4ee;
+  border-radius: 10px;
+}
+.size-board-guide img {
+  max-width: 230px;
+  width: 100%;
+  display: block;
+  margin: 12px auto;
+}
+.size-board-guide summary,
+.legacy-records summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 8px;
+}
+.size-record {
+  flex-wrap: wrap;
+}
+.record-confirmation {
+  flex-basis: 100%;
+  background: #f5f6f1;
+  padding: 12px;
+  border-radius: 10px;
+}
+.measurement-editor input,
+.measurement-editor select {
+  min-width: 0;
+}

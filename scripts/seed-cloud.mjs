@@ -23,10 +23,15 @@ try {
     lines.push(
       `insert into public.civil_stores(id,data) values(${text(store.id)},${literal(store)}) on conflict(id) do nothing;`,
     )
+  const sizeLines = [
+    '-- Incremental demonstration sizes only. Existing records are not overwritten.',
+    'begin;',
+  ]
   for (const delivery of state.deliveries) {
     delivery.id = `${delivery.id}-${delivery.date}`
-    delivery.photo = sample
-    lines.push(
+    delivery.photo = delivery.source === 'photo' ? sample : null
+    const destination = delivery.measurement ? sizeLines : lines
+    destination.push(
       `insert into public.civil_deliveries(id,store_id,data) values(${text(delivery.id)},${text(delivery.storeId)},${literal(delivery)}) on conflict(id) do nothing;`,
     )
   }
@@ -34,9 +39,15 @@ try {
     lines.push(
       `insert into public.civil_claims(id,store_id,amount) values(${text(id)},${text(id.slice(11))},${Number(amount)}) on conflict(id) do nothing;`,
     )
-  lines.push('commit;')
+  for (const [id, counts] of Object.entries(state.sizeClaims))
+    sizeLines.push(
+      `insert into public.civil_size_claims(id,store_id,counts) values(${text(id)},${text(id.slice(11))},${literal(counts)}) on conflict(id) do nothing;`,
+    )
+  lines.push(...sizeLines.slice(2), 'commit;')
+  sizeLines.push('commit;')
   await mkdir('supabase', { recursive: true })
   await writeFile('supabase/seed.sql', lines.join('\n') + '\n')
+  await writeFile('supabase/seed-sizes.sql', sizeLines.join('\n') + '\n')
   console.log(
     `Generated supabase/seed.sql: ${state.stores.length} stores, ${state.deliveries.length} deliveries. No existing records overwritten.`,
   )

@@ -3,9 +3,19 @@ import { save } from './actions'
 import { useState } from 'react'
 import { Registration } from './Registration'
 import { GeoMap } from './GeoMap'
-import { aggregate, dateKey, validateWeeklyHours } from './domain'
+import {
+  aggregateSizes,
+  dateKey,
+  validateWeeklyHours,
+  validateMeasurement,
+  validateSizeCounts,
+  measurementLabel,
+  SIZE_OPTIONS,
+  isDemoDelivery,
+} from './domain'
+import { MeasurementEditor, SizeBoardGuide } from './MeasurementEditor'
 import { WeeklyHoursEditor } from './WeeklyHoursEditor'
-import type { Delivery, Store } from './domain'
+import type { Delivery, Store, SizeMeasurement, SizeCounts } from './domain'
 import { Metric, StoreStatus } from './ui'
 import type { PageProps } from './ui'
 
@@ -112,49 +122,69 @@ export function Merchant({ data, notify }: PageProps) {
 function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
   const today = dateKey()
   const [tab, setTab] = useState<Delivery['status']>('pending')
-  const [claim, setClaim] = useState(
-    String(data.claims[`${today}:${store.id}`] ?? ''),
-  )
-  const [manual, setManual] = useState('')
+  const [manual, setManual] = useState<SizeMeasurement>({
+    boardVersion: 'street-v1',
+    size: 'S',
+    quantity: 1,
+  })
+  const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState(reasons[0])
-  const totals = aggregate(data, store.id)
-  const records = data.deliveries.filter(
-    (r) => r.storeId === store.id && r.date === today,
-  )
+  const totals = aggregateSizes(data, store.id)
+  const records = data.deliveries
+    .filter((r) => r.storeId === store.id && r.date === today && r.measurement)
+    .sort(
+      (a, b) =>
+        Number(isDemoDelivery(a)) - Number(isDemoDelivery(b)) ||
+        Date.parse(b.createdAt) - Date.parse(a.createdAt),
+    )
   const shown = records.filter((r) => r.status === tab)
-  async function decide(id: string, status: 'accepted' | 'rejected') {
-    await save(
+  async function decide(
+    id: string,
+    status: 'accepted' | 'rejected',
+    confirmed?: SizeMeasurement,
+  ) {
+    const succeeded = await save(
       (draft) => {
         const record = draft.deliveries.find(
           (r) => r.id === id && r.storeId === store.id && r.date === dateKey(),
         )
         if (!record || record.status !== 'pending')
           throw new Error('這筆紀錄已變更，請重新確認。')
+        if (status === 'accepted' && record.measurement) {
+          validateMeasurement(confirmed)
+          record.confirmedMeasurement = { ...confirmed }
+        }
         record.status = status
         record.reason = status === 'rejected' ? reason : ''
       },
       notify,
       status === 'accepted'
-        ? '已確認收受，照片佐證與市府比對已同步更新。'
+        ? '已確認收受，尺寸件數與市府資料已同步更新。'
         : '已拒收，原因已同步至民眾端。',
     )
+    if (succeeded && status === 'accepted') setTab('accepted')
+    return succeeded
   }
   return (
     <>
       <div className="metrics three">
-        <div data-testid="photo-total">
+        <div data-testid="size-total">
           <Metric
-            label="照片佐證量"
-            value={totals.liters.toFixed(1)}
-            unit="公升・模擬估算"
+            label="今日已確認"
+            value={totals.total}
+            unit="件・人工尺寸登記"
             accent
           />
         </div>
-        <Metric label="已收受照片" value={totals.count} unit="筆獨立紀錄" />
         <Metric
-          label="未拍照收受"
-          value={totals.manualLiters.toFixed(1)}
-          unit="公升・不列入照片佐證"
+          label="小件／中件／大件"
+          value={`${totals.confirmed.S}／${totals.confirmed.M}／${totals.confirmed.L}`}
+          unit="件・不換算公升"
+        />
+        <Metric
+          label="待確認交付"
+          value={totals.pending}
+          unit="筆・尚未計入收受"
         />
       </div>
       <div className="merchant-layout">
@@ -162,9 +192,14 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
           <div className="card-head">
             <div>
               <span className="eyebrow">01 / 現場確認</span>
-              <h2>{store.name}・今日交付紀錄</h2>
+              <h2>
+                {store.name}・
+                {tab === 'accepted' ? '今日全部收受紀錄' : '今日交付紀錄'}
+              </h2>
             </div>
-            <span className="badge orange">{totals.pending} 筆待確認</span>
+            <span className="badge orange">
+              {records.filter((r) => r.status === 'pending').length} 筆待確認
+            </span>
           </div>
           <div className="tabs" role="group" aria-label="交付狀態">
             {tabs.map((t) => (
@@ -195,56 +230,13 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
               </label>
             )}
             {shown.length ? (
-              shown.map((r) => (
-                <div className="record" key={r.id}>
-                  {r.photo && r.source === 'photo' ? (
-                    <img
-                      className="record-photo"
-                      src={r.photo}
-                      alt={`${r.kind}交付照片`}
-                    />
-                  ) : (
-                    <span className="manual-thumb">手動紀錄</span>
-                  )}
-                  <div className="record-info">
-                    <b>{r.kind}</b>
-                    <small>
-                      {new Date(r.createdAt).toLocaleTimeString('zh-TW', {
-                        timeZone: 'Asia/Taipei',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: false,
-                      })}
-                      ・{r.source === 'photo' ? '照片模擬估算' : '店家手動登記'}
-                    </small>
-                    <span>{r.liters.toFixed(1)} 公升</span>
-                    {r.reason && <small>拒收原因：{r.reason}</small>}
-                  </div>
-                  <div className="record-actions">
-                    {r.status === 'pending' ? (
-                      <>
-                        <button
-                          className="button secondary"
-                          onClick={() => decide(r.id, 'accepted')}
-                        >
-                          確認收受
-                        </button>
-                        <button
-                          className="button danger"
-                          onClick={() => decide(r.id, 'rejected')}
-                        >
-                          拒收
-                        </button>
-                      </>
-                    ) : (
-                      <span
-                        className={`badge ${r.status === 'accepted' ? 'green' : 'orange'}`}
-                      >
-                        {r.status === 'accepted' ? '已收受' : '已拒收'}
-                      </span>
-                    )}
-                  </div>
-                </div>
+              shown.map((record) => (
+                <DeliveryConfirmation
+                  key={record.id}
+                  record={record}
+                  decide={decide}
+                  notify={notify}
+                />
               ))
             ) : (
               <p className="empty">
@@ -255,57 +247,52 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
           <div className="card-body manual-entry">
             <h3>補登未拍照收受</h3>
             <p className="muted">
-              只記錄實際代收的行人垃圾；手動登記不等於民眾獨立照片佐證。
+              使用同一尺寸板登記；此為店家自行補登，沒有民眾照片佐證。
             </p>
             <form
-              onSubmit={async (e) => {
-                e.preventDefault()
-                const value = Number(manual)
-                if (
-                  !manual.trim() ||
-                  !Number.isFinite(value) ||
-                  value <= 0 ||
-                  value > 999
-                ) {
-                  notify('請輸入大於 0 且不超過 999 公升的收受量。')
+              onSubmit={async (event) => {
+                event.preventDefault()
+                if (busy) return
+                try {
+                  validateMeasurement(manual)
+                } catch (error) {
+                  notify((error as Error).message)
                   return
                 }
-                const done = await save(
-                  (draft) => {
-                    draft.deliveries.unshift({
-                      id: crypto.randomUUID(),
-                      storeId: store.id,
-                      date: dateKey(),
-                      createdAt: new Date().toISOString(),
-                      kind: '未拍照代收垃圾',
-                      liters: value,
-                      low: value,
-                      high: value,
-                      photo: null,
-                      source: 'manual',
-                      status: 'accepted',
-                      reason: '',
-                    })
-                  },
-                  notify,
-                  '已新增未拍照收受；不列入照片佐證量。',
-                )
-                if (done) setManual('')
+                setBusy(true)
+                try {
+                  await save(
+                    (draft) =>
+                      draft.deliveries.unshift({
+                        id: crypto.randomUUID(),
+                        storeId: store.id,
+                        date: dateKey(),
+                        createdAt: new Date().toISOString(),
+                        kind: '未拍照尺寸登記',
+                        liters: 0,
+                        low: 0,
+                        high: 0,
+                        measurement: { ...manual },
+                        confirmedMeasurement: { ...manual },
+                        photo: null,
+                        source: 'manual',
+                        status: 'accepted',
+                        reason: '',
+                      }),
+                    notify,
+                    '已新增未拍照尺寸收受，不列入民眾照片紀錄。',
+                  )
+                } finally {
+                  setBusy(false)
+                }
               }}
             >
-              <label>
-                未拍照收受量（公升）
-                <input
-                  type="number"
-                  min="0.1"
-                  max="999"
-                  step="0.1"
-                  required
-                  value={manual}
-                  onChange={(e) => setManual(e.target.value)}
-                />
-              </label>
-              <button className="button secondary full" type="submit">
+              <MeasurementEditor
+                value={manual}
+                onChange={setManual}
+                prefix="補登"
+              />
+              <button className="button secondary full" disabled={busy}>
                 新增未拍照收受
               </button>
             </form>
@@ -323,65 +310,241 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
             store={store}
             notify={notify}
           />
-          <section className="card">
-            <div className="card-head">
-              <div>
-                <span className="eyebrow">03 / 每日申報</span>
-                <h2>今日代收總量</h2>
-              </div>
-              <span className="badge gray">{today}</span>
-            </div>
-            <div className="card-body">
-              <p className="muted">
-                申報額外代收的行人垃圾，自有營業垃圾不列入此申報及補助範圍。此原型不計算或發放補助。
-              </p>
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  const value = Number(claim)
-                  if (
-                    !claim.trim() ||
-                    !Number.isFinite(value) ||
-                    value < 0 ||
-                    value > 999
-                  ) {
-                    notify('請輸入 0 至 999 公升；沒有代收時請明確填 0。')
-                    return
-                  }
-                  await save(
-                    (draft) => {
-                      draft.claims[`${dateKey()}:${store.id}`] = value
-                    },
-                    notify,
-                    '今日申報已儲存，市府端比對已同步更新。',
-                  )
-                }}
-              >
-                <label>
-                  今日代收申報量（公升）
-                  <input
-                    type="number"
-                    min="0"
-                    max="999"
-                    step="0.1"
-                    required
-                    value={claim}
-                    onChange={(e) => setClaim(e.target.value)}
-                  />
-                </label>
-                <p className="mini-note">
-                  照片估計量為 {totals.low.toFixed(1)}–{totals.high.toFixed(1)}{' '}
-                  公升。未申報與零量申報會分開呈現。
-                </p>
-                <button className="button full" type="submit">
-                  儲存今日申報
-                </button>
-              </form>
-            </div>
-          </section>
+          <DailySizeClaim
+            key={JSON.stringify([
+              store.id,
+              today,
+              data.sizeClaims[`${today}:${store.id}`],
+            ])}
+            store={store}
+            data={data}
+            notify={notify}
+          />
         </div>
       </div>
     </>
+  )
+}
+
+function DeliveryConfirmation({
+  record,
+  decide,
+  notify,
+}: {
+  record: Delivery
+  decide: (
+    id: string,
+    status: 'accepted' | 'rejected',
+    confirmed?: SizeMeasurement,
+  ) => Promise<boolean>
+  notify: PageProps['notify']
+}) {
+  const [measurement, setMeasurement] = useState<SizeMeasurement>(
+    record.confirmedMeasurement ??
+      record.measurement ?? {
+        boardVersion: 'street-v1',
+        size: 'S',
+        quantity: 1,
+      },
+  )
+  const [busy, setBusy] = useState(false)
+  async function confirm(status: 'accepted' | 'rejected') {
+    if (busy) return
+    if (status === 'accepted' && record.measurement) {
+      try {
+        validateMeasurement(measurement)
+      } catch (error) {
+        notify((error as Error).message)
+        return
+      }
+    }
+    setBusy(true)
+    try {
+      await decide(record.id, status, measurement)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div
+      className="record size-record"
+      role="group"
+      aria-label={`${record.kind}交付紀錄`}
+    >
+      {record.photo && record.source === 'photo' ? (
+        <img
+          className="record-photo"
+          src={record.photo}
+          alt={`${record.kind}交付照片`}
+        />
+      ) : (
+        <span className="manual-thumb">手動紀錄</span>
+      )}
+      <div className="record-info">
+        <b>{record.kind}</b>
+        <small>
+          {new Date(record.createdAt).toLocaleTimeString('zh-TW', {
+            timeZone: 'Asia/Taipei',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          })}
+          ・{record.source === 'photo' ? '尺寸板照片登記' : '店家自行補登'}
+        </small>
+        <span>原填：{measurementLabel(record)}</span>
+        {record.confirmedMeasurement && (
+          <span>店家確認：{measurementLabel(record, true)}</span>
+        )}
+        {record.reason && <small>拒收原因：{record.reason}</small>}
+      </div>
+      {record.status === 'pending' ? (
+        <div className="record-confirmation">
+          {record.measurement && (
+            <MeasurementEditor
+              value={measurement}
+              onChange={setMeasurement}
+              prefix="店家確認"
+            />
+          )}
+          <p className="mini-note">
+            以現場尺寸板核對，必要時修正；原填資料會保留。
+          </p>
+          <div className="button-row">
+            <button
+              className="button secondary"
+              disabled={busy}
+              onClick={() => confirm('accepted')}
+            >
+              確認收受
+            </button>
+            <button
+              className="button danger"
+              disabled={busy}
+              onClick={() => confirm('rejected')}
+            >
+              拒收
+            </button>
+          </div>
+        </div>
+      ) : (
+        <span
+          className={`badge ${record.status === 'accepted' ? 'green' : 'orange'}`}
+        >
+          {record.status === 'accepted' ? '已收受' : '已拒收'}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function DailySizeClaim({ store, data, notify }: PageProps & { store: Store }) {
+  const today = dateKey()
+  const totals = aggregateSizes(data, store.id)
+  const [claim, setClaim] = useState<SizeCounts>(() => ({
+    ...(data.sizeClaims[`${today}:${store.id}`] ?? { S: 0, M: 0, L: 0 }),
+  }))
+  const [busy, setBusy] = useState(false)
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">03 / 每日申報</span>
+          <h2>今日尺寸收受申報</h2>
+        </div>
+        <span className="badge gray">{today}</span>
+      </div>
+      <div className="card-body">
+        <p>
+          逐筆已確認：小件 {totals.confirmed.S}／中件 {totals.confirmed.M}／大件{' '}
+          {totals.confirmed.L} 件。請核對今日實際交付後填寫；未申報不視為零。
+        </p>
+        <SizeBoardGuide />
+        <button
+          className="text-button"
+          onClick={() => setClaim({ ...totals.confirmed })}
+        >
+          帶入已確認件數
+        </button>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault()
+            if (busy) return
+            const submitter = (event.nativeEvent as SubmitEvent).submitter
+            const closeToday =
+              submitter instanceof HTMLButtonElement &&
+              submitter.value === 'close'
+            try {
+              validateSizeCounts(claim)
+            } catch (error) {
+              notify((error as Error).message)
+              return
+            }
+            setBusy(true)
+            try {
+              await save(
+                (draft) => {
+                  const currentDate = dateKey()
+                  const target = draft.stores.find((s) => s.id === store.id)
+                  if (!target) throw new Error('找不到此店家，請重新載入。')
+                  draft.sizeClaims[`${currentDate}:${store.id}`] = { ...claim }
+                  if (closeToday) {
+                    target.pausedOn = currentDate
+                    target.pauseReason = '今日結算完成，準備交付清運'
+                  }
+                },
+                notify,
+                closeToday
+                  ? '今日已結算並停收；請依現場清運方式處理。'
+                  : '今日尺寸申報已儲存，市府端資料已同步。',
+              )
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {SIZE_OPTIONS.map((size) => (
+            <label key={size.id}>
+              今日{size.label}申報件數
+              <input
+                type="number"
+                min="0"
+                max="999"
+                step="1"
+                required
+                value={claim[size.id]}
+                onChange={(event) =>
+                  setClaim((previous) => ({
+                    ...previous,
+                    [size.id]: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+          ))}
+          <p className="mini-note">
+            結算只是完成申報與停收，清運須由現場另行確認。
+          </p>
+          <button
+            className="button full"
+            type="submit"
+            name="settlement"
+            value="close"
+            disabled={busy}
+          >
+            完成今日結算並停收
+          </button>
+          <button
+            className="button secondary full"
+            type="submit"
+            name="settlement"
+            value="save"
+            disabled={busy}
+          >
+            儲存今日尺寸申報
+          </button>
+        </form>
+      </div>
+    </section>
   )
 }
 

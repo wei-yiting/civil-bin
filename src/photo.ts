@@ -30,3 +30,16 @@ export const SAMPLE =
   encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300"><rect width="600" height="300" fill="#e4eee6"/><ellipse cx="300" cy="250" rx="200" ry="20" fill="#c5d8ca"/><path d="M110 100h95l-15 140h-65z" fill="#fff" stroke="#246656" stroke-width="4"/><path d="M115 100h85M165 60l10 80" stroke="#246656" stroke-width="7"/><rect x="260" y="145" width="170" height="100" rx="10" fill="#e0bc84"/><path d="M260 185h170" stroke="#af8c55" stroke-width="3"/><rect x="465" y="140" width="65" height="100" rx="4" fill="#fff" stroke="#246656" stroke-width="3"/><path d="M475 160h45M475 175h30M475 190h45" stroke="#246656" stroke-width="3"/></svg>`,
   )
+
+export async function prepareSamplePhoto(): Promise<string> {
+  const image = new Image()
+  image.src = SAMPLE
+  await image.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = 600
+  canvas.height = 300
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('無法載入示範圖，請改選照片。')
+  context.drawImage(image, 0, 0, 600, 300)
+  return canvas.toDataURL('image/jpeg', 0.8)
+}

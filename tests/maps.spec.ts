@@ -140,7 +140,13 @@ test('市府全區地圖可切換申報量與行政區圖層', async ({ page }) 
     .click()
   await expect(
     page.getByRole('button', { name: '地圖：阿明早餐店', exact: true }),
-  ).toContainText('22.0')
+  ).toHaveText('—')
+  await page
+    .getByRole('combobox', { name: '地圖顯示數值', exact: true })
+    .selectOption('confirmed')
+  await expect(
+    page.getByRole('button', { name: '地圖：阿明早餐店', exact: true }),
+  ).toContainText('件')
   await page
     .getByRole('row')
     .filter({ hasText: '惠姐雜貨店' })

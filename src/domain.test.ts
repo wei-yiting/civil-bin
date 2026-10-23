@@ -230,7 +230,7 @@ describe('註冊與資料遷移', () => {
     }
     old.stores.push({ ...old.stores[0]!, id: 'legacy', name: '未知舊店' })
     const migrated = migrateState(old)
-    expect(migrated.version).toBe(3)
+    expect(migrated.version).toBe(4)
     expect(migrated.stores[0]).toMatchObject({
       lat: 25.0588,
       lng: 121.5434,
@@ -310,6 +310,36 @@ describe('每週時段與當日停收', () => {
       expect(store.publicCapacity).toBeNull()
     }
   })
+  it('深夜仍有 19 家可收受示範點，保留五家不同時段與停收情境', () => {
+    const state = seedState()
+    const now = new Date('2026-10-24T01:50:00+08:00')
+    const fullDay = state.stores
+      .slice(3)
+      .filter((store) =>
+        store.weeklyHours.every(
+          (hours) =>
+            !hours.closed && hours.start === '00:00' && hours.end === '23:59',
+        ),
+      )
+    expect(fullDay).toHaveLength(16)
+    expect(state.stores.filter((store) => isOpen(store, now))).toHaveLength(19)
+    const varied = state.stores
+      .slice(3)
+      .filter((store) => store.weeklyHours.some((hours) => hours.closed))
+    expect(varied.map((store) => store.id)).toEqual([
+      'demo-04',
+      'demo-08',
+      'demo-12',
+      'demo-16',
+      'demo-20',
+    ])
+    expect(state.stores.find((store) => store.id === 'demo-16')!.enabled).toBe(
+      false,
+    )
+    expect(
+      state.stores.find((store) => store.id === 'demo-08')!.pauseReason,
+    ).toContain('空間已滿')
+  })
   it('舊三店升級只補缺少示範店，保留舊證據並且再次載入不重複', () => {
     const seed = seedState()
     const original = {
@@ -327,7 +357,9 @@ describe('每週時段與當日停收', () => {
     expect(migrated.stores).toHaveLength(24)
     expect(migrated.stores[0]!.enabled).toBe(false)
     expect(migrated.claims[`${dateKey()}:a`]).toBe(99)
-    expect(migrated.deliveries.slice(0, 12)).toEqual(original.deliveries)
+    expect(migrated.deliveries.slice(0, original.deliveries.length)).toEqual(
+      original.deliveries,
+    )
     expect(migrated.reviews.old).toBe('已查核')
     expect(migrateState(migrated)).toEqual(migrated)
   })

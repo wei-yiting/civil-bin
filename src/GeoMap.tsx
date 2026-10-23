@@ -21,6 +21,7 @@ interface GeoMapProps {
   picked?: Coordinates | null
   onPick?: (point: Coordinates) => void
   volumes?: Record<string, number>
+  valueUnit?: 'L' | '件'
   overview?: boolean
   fitToken?: number
   onCenterChange?: (center: Coordinates) => void
@@ -47,6 +48,7 @@ export function GeoMap({
   picked,
   onPick,
   volumes,
+  valueUnit = 'L',
   overview = false,
   fitToken = 0,
   onCenterChange,
@@ -145,8 +147,8 @@ export function GeoMap({
             .filter((v): v is number => Number.isFinite(v))
           const total = known.reduce((n, v) => n + v, 0)
           const value = known.length
-            ? total.toFixed(1) +
-              ' L' +
+            ? (valueUnit === '件' ? String(total) : total.toFixed(1)) +
+              ` ${valueUnit}` +
               (known.length < cluster.length ? '＋?' : '')
             : '—'
           const marker = L.marker([lat, lng], {
@@ -184,7 +186,7 @@ export function GeoMap({
         const value = volumes?.[store.id]
         const icon = L.divIcon({
           className: `real-store-pin ${selected === store.id ? 'is-selected' : ''} ${isOpen(store) ? '' : 'is-closed'}`,
-          html: `<span>${volumes ? (Number.isFinite(value) ? value!.toFixed(1) + '<small>L</small>' : '—') : '▤'}</span>`,
+          html: `<span>${volumes ? (Number.isFinite(value) ? (valueUnit === '件' ? String(value) : value!.toFixed(1)) + `<small>${valueUnit}</small>` : '—') : '▤'}</span>`,
           iconSize: [44, 44],
           iconAnchor: [22, 44],
         })
@@ -241,7 +243,7 @@ export function GeoMap({
       storeGroup.remove()
       group.remove()
     }
-  }, [stores, bins, selected, volumes, overview, now])
+  }, [stores, bins, selected, volumes, valueUnit, overview, now])
   useEffect(() => {
     const points = stores.filter((s): s is Store & Coordinates =>
       hasCoordinates(s),

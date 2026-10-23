@@ -1,5 +1,19 @@
 import sampleWaste from './assets/sample-waste.svg'
 import { hasCoordinates } from './geo'
+import {
+  validateMeasurement,
+  validateSizeCounts,
+  type SizeMeasurement,
+  type SizeCounts,
+} from './measurement'
+export {
+  SIZE_OPTIONS,
+  validateMeasurement,
+  validateSizeCounts,
+  measurementLabel,
+  emptySizeCounts,
+} from './measurement'
+export type { SizeMeasurement, SizeCounts } from './measurement'
 
 export interface DailyHours {
   closed: boolean
@@ -54,6 +68,8 @@ export interface Store {
 }
 export interface Delivery {
   id: string
+  measurement?: SizeMeasurement
+  confirmedMeasurement?: SizeMeasurement
   storeId: string
   date: string
   createdAt: string
@@ -68,7 +84,8 @@ export interface Delivery {
   reason: string
 }
 export interface State {
-  version: 3
+  version: 4
+  sizeClaims: Record<string, SizeCounts>
   stores: Store[]
   deliveries: Delivery[]
   claims: Record<string, number>
@@ -191,11 +208,17 @@ export function seedState(): State {
     ['文山區', '茶香', 24.993, 121.569],
   ]
   locations.forEach(([area, label, lat, lng], index) => {
-    const hoursStart =
-      index % 3 === 0 ? '07:00' : index % 3 === 1 ? '10:00' : '16:00'
-    const hoursEnd = index % 3 === 2 ? '23:00' : '20:00'
+    const allDayDemo = index % 4 !== 3
+    const hoursStart = allDayDemo
+      ? '00:00'
+      : index % 3 === 0
+        ? '07:00'
+        : index % 3 === 1
+          ? '10:00'
+          : '16:00'
+    const hoursEnd = allDayDemo ? '23:59' : index % 3 === 2 ? '23:00' : '20:00'
     const weeklyHours = defaultWeeklyHours(hoursStart, hoursEnd)
-    weeklyHours[index % 7]!.closed = true
+    if (!allDayDemo) weeklyHours[index % 7]!.closed = true
     stores.push({
       id: `demo-${String(index + 1).padStart(2, '0')}`,
       name: `${label}夥伴小店（示範）`,
@@ -281,8 +304,48 @@ export function seedState(): State {
         )
     }
   }
+  const sizeClaims: Record<string, SizeCounts> = {}
+  for (const [index, store] of stores.entries()) {
+    for (let day = 0; day < 3; day += 1) {
+      const recordDate = dateKey(
+        new Date(Date.parse(`${date}T12:00:00+08:00`) - day * 86_400_000),
+      )
+      const counts: SizeCounts = { S: 0, M: 0, L: 0 }
+      for (let n = 0; n < 3; n += 1) {
+        const size = (['S', 'M', 'L'] as const)[(index + n + day) % 3]!
+        const measurement: SizeMeasurement = {
+          boardVersion: 'street-v1',
+          size,
+          quantity: 1 + ((index + n) % 3),
+        }
+        counts[size] += measurement.quantity
+        deliveries.push({
+          id: `sample-size-${recordDate}-${store.id}-${n}`,
+          storeId: store.id,
+          date: recordDate,
+          createdAt: `${recordDate}T${String(10 + n).padStart(2, '0')}:30:00+08:00`,
+          kind: n % 2 ? '食物包裝' : '飲料杯／容器',
+          liters: 0,
+          low: 0,
+          high: 0,
+          photo: sampleWaste,
+          source: 'photo',
+          status: 'accepted',
+          reason: '',
+          measurement,
+          confirmedMeasurement: { ...measurement },
+        })
+      }
+      if (index % 6 !== 0 || day > 0)
+        sizeClaims[`${recordDate}:${store.id}`] = {
+          ...counts,
+          S: counts.S + (index % 5 === 0 ? 2 : 0),
+        }
+    }
+  }
   return {
-    version: 3,
+    version: 4,
+    sizeClaims,
     stores,
     deliveries,
     claims,
@@ -313,7 +376,7 @@ export function aggregate(
   date = dateKey(),
 ): Aggregate {
   const records = state.deliveries.filter(
-    (r) => r.storeId === storeId && r.date === date,
+    (r) => r.storeId === storeId && r.date === date && !r.measurement,
   )
   const accepted = records.filter(
     (r) => r.status === 'accepted' && validAmount(r.liters),
@@ -402,6 +465,7 @@ export function capacityAnalysis(
         r.date === date &&
         r.status === 'accepted' &&
         r.source === 'manual' &&
+        !r.measurement &&
         validAmount(r.liters),
     )
   const demand =
@@ -502,6 +566,8 @@ export function reviewKey(
       r.low,
       r.high,
       r.reason,
+      r.measurement ?? null,
+      r.confirmedMeasurement ?? null,
     ])
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   const store = state.stores.find((s) => s.id === storeId)
@@ -509,6 +575,7 @@ export function reviewKey(
     date,
     storeId,
     state.claims[`${date}:${storeId}`] ?? null,
+    state.sizeClaims?.[`${date}:${storeId}`] ?? null,
     evidence,
     store
       ? [
@@ -625,7 +692,7 @@ export function migrateState(raw: unknown): State {
   if (!raw || typeof raw !== 'object') return fail()
   const state = raw as State
   if (
-    !([1, 2, 3] as number[]).includes(state.version) ||
+    !([1, 2, 3, 4] as number[]).includes(state.version) ||
     !Array.isArray(state.stores) ||
     !state.stores.length ||
     !Array.isArray(state.deliveries) ||
@@ -653,7 +720,7 @@ export function migrateState(raw: unknown): State {
       !validHours(s.hoursStart, s.hoursEnd)
     )
       return fail()
-    if (state.version === 3) {
+    if (state.version >= 3) {
       validateWeeklyHours(s.weeklyHours)
       if (
         !(
@@ -680,11 +747,11 @@ export function migrateState(raw: unknown): State {
       ...coordinates,
       area: demo && state.version < 3 ? demo.area : s.area,
       weeklyHours:
-        state.version === 3
+        state.version >= 3
           ? s.weeklyHours.map((h) => ({ ...h }))
           : defaultWeeklyHours(s.hoursStart, s.hoursEnd),
-      pausedOn: state.version === 3 ? s.pausedOn : null,
-      pauseReason: state.version === 3 ? s.pauseReason : '',
+      pausedOn: state.version >= 3 ? s.pausedOn : null,
+      pauseReason: state.version >= 3 ? s.pauseReason : '',
       isDemo:
         state.version >= 2 && typeof s.isDemo === 'boolean' ? s.isDemo : true,
       x: Number.isFinite(s.x) ? s.x : 50,
@@ -696,6 +763,11 @@ export function migrateState(raw: unknown): State {
     }
   })
   for (const r of state.deliveries) {
+    if (r?.measurement !== undefined) validateMeasurement(r.measurement)
+    if (r?.confirmedMeasurement !== undefined) {
+      validateMeasurement(r.confirmedMeasurement)
+      if (!r.measurement) return fail()
+    }
     if (
       !r ||
       typeof r.id !== 'string' ||
@@ -721,6 +793,15 @@ export function migrateState(raw: unknown): State {
     Object.values(state.reviews).some((v) => typeof v !== 'string')
   )
     return fail()
+  if (state.version === 4) {
+    if (
+      !state.sizeClaims ||
+      typeof state.sizeClaims !== 'object' ||
+      Array.isArray(state.sizeClaims)
+    )
+      return fail()
+    Object.values(state.sizeClaims).forEach(validateSizeCounts)
+  }
   const expand =
     state.version < 3 &&
     ['a', 'b', 'c'].every((id) => stores.some((s) => s.id === id && s.isDemo))
@@ -739,9 +820,53 @@ export function migrateState(raw: unknown): State {
       claims[key] = value
   return {
     ...state,
-    version: 3,
+    version: 4,
+    sizeClaims: state.version === 4 ? { ...state.sizeClaims } : {},
     stores: [...stores, ...missing],
     deliveries,
     claims,
   }
+}
+
+export function aggregateSizes(
+  state: State,
+  storeId: string,
+  date = dateKey(),
+) {
+  const reported: SizeCounts = { S: 0, M: 0, L: 0 }
+  const confirmed: SizeCounts = { S: 0, M: 0, L: 0 }
+  let photoCount = 0,
+    manualCount = 0,
+    pending = 0
+  for (const record of state.deliveries) {
+    if (
+      record.storeId !== storeId ||
+      record.date !== date ||
+      !record.measurement
+    )
+      continue
+    if (record.status === 'pending') {
+      pending += 1
+      continue
+    }
+    if (record.status !== 'accepted') continue
+    const original = record.measurement
+    const accepted = record.confirmedMeasurement ?? original
+    reported[original.size] += original.quantity
+    confirmed[accepted.size] += accepted.quantity
+    if (record.source === 'photo') photoCount += 1
+    else manualCount += 1
+  }
+  return {
+    reported,
+    confirmed,
+    photoCount,
+    manualCount,
+    pending,
+    total: confirmed.S + confirmed.M + confirmed.L,
+  }
+}
+
+export function isDemoDelivery(record: Pick<Delivery, 'id'>): boolean {
+  return record.id.startsWith('sample-') || record.id.startsWith('seed:')
 }

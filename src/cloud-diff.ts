@@ -1,7 +1,7 @@
 import type { State } from './domain'
 
 export type CloudChange = {
-  table: 'stores' | 'deliveries' | 'claims' | 'reviews'
+  table: 'stores' | 'deliveries' | 'claims' | 'sizeClaims' | 'reviews'
   id: string
   expected: unknown
   value: unknown
@@ -23,7 +23,7 @@ export function cloudChanges(before: State, after: State): CloudChange[] {
         changes.push({ table, id: row.id, expected: previous, value: row })
     }
   }
-  for (const table of ['claims', 'reviews'] as const) {
+  for (const table of ['claims', 'sizeClaims', 'reviews'] as const) {
     for (const [id, value] of Object.entries(after[table])) {
       const expected = before[table][id] ?? null
       if (!same(expected, value)) changes.push({ table, id, expected, value })

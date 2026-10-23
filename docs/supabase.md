@@ -1,6 +1,6 @@
 # Supabase 與 Vercel 部署
 
-目前預設仍是本機 localStorage。程式已提供真正的 Supabase adapter，但雲端資料表與帳號仍需初始化，尚未完成實際雲端流程驗收。設定雲端後，連線失敗會阻擋寫入，不會偷偷改存本機。AI 辨識仍為模擬，本階段沒有串接影像模型。
+目前預設仍是本機 localStorage。程式已提供真正的 Supabase adapter，但雲端資料表與帳號仍需初始化，尚未完成實際雲端流程驗收。設定雲端後，連線失敗會阻擋寫入，不會偷偷改存本機。本版改用尺寸板人工登記，不串接影像模型。
 
 ## 1. 建立 Supabase project
 
@@ -8,8 +8,12 @@
 
 1. 在 https://supabase.com/dashboard 建立新 project，保管 DB 密碼。
 2. 到 Authentication → Sign In / Providers 啟用 Anonymous Sign-Ins。公開展示的 CAPTCHA 與用量限制需另外設定，本版尚未整合 CAPTCHA UI。
-3. 到 SQL Editor 新增查詢，貼上 `supabase/migrations/202610240001_civil_bin.sql` 並執行一次。它會建立五張業務資料表、RLS、交易 RPC、private 照片 bucket 與 Realtime publication。
+3. 到 SQL Editor 新增查詢，依序執行 `supabase/migrations/202610240001_civil_bin.sql`、`supabase/migrations/202610240002_size_board.sql`，各一次。它會建立業務資料表、RLS、交易 RPC、private 照片 bucket 與 Realtime publication。
 4. 在 repo 執行 `npm run seed:cloud`，將生成的 `supabase/seed.sql` 貼入 SQL Editor 執行。預載 24 間虛構店家及多日交付與申報，不覆寫既有資料。示範 delivery ID 包含日期，同日不重複新增，隔日保留歷史。清空共享資料需由管理員明確操作。
+
+已完成第一版初始化的專案，只執行 `002_size_board.sql` 與 `supabase/seed-sizes.sql`，不要重跑 `001`。新版新增 civil_size_claims、尺寸登記及確認權限，舊公升資料保留。
+
+若要增加深夜可開放的虛構示範點，執行 `supabase/demo-open-hours.sql`。只更新無 owner、且仍是原始排程的 16 家示範店，已自訂或認領店家不變。
 
 ## 2. 建立 demo 店家、市府帳號
 
@@ -58,7 +62,7 @@ GitHub Pages 不會自動取得 Vercel 的環境變數；保留本機示範模�
 - 照片位於 private bucket，上傳限 5 MB JPEG／PNG／WebP，限本人、收受店家與市府授權讀取。失敗交易會嘗試刪除孤立上傳；管理員仍應定期清理未引用檔案。
 - 全體可看到店家與申報量，以及預載示範紀錄；真實交付只供本人、收受店家與市府讀取。此 demo 不收姓名、電話；正式服務仍需要資料保存／刪除政策。
 - seed 交付是虛構數值，附上既有示範插圖以呈現累計量。插圖不是實拍影像證據，不能將此資料聲稱為真實政府統計。
-- 尚須在使用者建立的 Supabase project 實測 Auth、Storage、Realtime、跨裝置與正式 RLS；未部署前不宣稱已完成雲端驗收。
+- 已在使用者 Supabase 與三個獨立本機 origin 實測匿名民眾送件、店家修正確認、每日申報與市府即時更新。實體手機與 Vercel 正式部署仍需另驗，詳見 docs/verification.md。
 
 ## 本機 DB 驗證
 

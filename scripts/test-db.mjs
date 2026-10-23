@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 
 const container = `civil-bin-test-${randomUUID().slice(0, 8)}`
@@ -44,8 +44,14 @@ try {
   if (!ready) throw new Error('PostgreSQL did not become ready')
   for (const path of [
     'supabase/tests/bootstrap.sql',
-    'supabase/migrations/202610240001_civil_bin.sql',
+    ...(await readdir('supabase/migrations'))
+      .filter((name) => name.endsWith('.sql'))
+      .sort()
+      .map((name) => `supabase/migrations/${name}`),
     'supabase/tests/permissions.sql',
+    'supabase/seed.sql',
+    'supabase/seed-sizes.sql',
+    'supabase/seed-sizes.sql',
   ]) {
     const sql = await readFile(path, 'utf8')
     docker(

@@ -1,17 +1,17 @@
 import { CityMapPanel } from './CityMapPanel'
-import { number, save } from './actions'
+import { CityTimePanel } from './CityTimePanel'
+import { dayLabel, shiftDay } from './city-history'
+import { save } from './actions'
 import { useState } from 'react'
-import {
-  aggregate,
-  capacityAnalysis,
-  classification,
-  dateKey,
-  reviewKey,
-} from './domain'
-import type { Store } from './domain'
+import { aggregateSizes, dateKey, reviewKey, measurementLabel } from './domain'
+import type { Store, SizeCounts } from './domain'
 import { Metric, StoreStatus } from './ui'
 import type { PageProps } from './ui'
 
+const totalCounts = (counts: SizeCounts) => counts.S + counts.M + counts.L
+function countsLabel(counts: SizeCounts) {
+  return `小 ${counts.S}／中 ${counts.M}／大 ${counts.L}（共 ${totalCounts(counts)} 件）`
+}
 function Review({
   data,
   store,
@@ -20,8 +20,7 @@ function Review({
 }: PageProps & { store: Store; day: string }) {
   const key = reviewKey(data, store.id, day)
   const [note, setNote] = useState(data.reviews[key] ?? '')
-  const result = classification(data, store.id, day)
-  const evidence = aggregate(data, store.id, day)
+  const evidence = aggregateSizes(data, store.id, day)
   return (
     <section className="card">
       <div className="card-head">
@@ -29,25 +28,22 @@ function Review({
           <span className="eyebrow">查核工作台</span>
           <h2>{store.name}・查核詳情</h2>
         </div>
-        <span
-          className={`badge ${result.level === 'normal' ? 'green' : 'orange'}`}
-        >
-          {result.label}
-        </span>
+        <span className="badge gray">供人工核對</span>
       </div>
       <div className="card-body">
-        <p>{result.detail}</p>
+        <p>
+          民眾原登記與店家確認的尺寸件數分開保留。差異供補件與核對，不判定違規。
+        </p>
         <div className="callout">
-          照片估計區間{' '}
-          <b>
-            {number(evidence.low)}–{number(evidence.high)} 公升
-          </b>
-          ；未拍照收受 <b>{number(evidence.manualLiters)} 公升</b>
-          。照片只涵蓋部分交付，差異不等於違規。
+          民眾原登記：<b>{countsLabel(evidence.reported)}</b>
+          <br />
+          店家已確認：<b>{countsLabel(evidence.confirmed)}</b>
         </div>
         <div className="evidence-list">
           {data.deliveries
-            .filter((r) => r.date === day && r.storeId === store.id)
+            .filter(
+              (r) => r.date === day && r.storeId === store.id && r.measurement,
+            )
             .map((r) => (
               <div className="evidence-row" key={r.id}>
                 {r.photo ? (
@@ -57,10 +53,10 @@ function Review({
                 )}
                 <div>
                   <b>{r.kind}</b>
-                  <small>
-                    {r.low.toFixed(1)}–{r.high.toFixed(1)} 公升・
-                    {r.source === 'manual' ? '店家登記' : '照片模擬估算'}
-                  </small>
+                  <small>原登記：{measurementLabel(r)}</small>
+                  {r.confirmedMeasurement && (
+                    <small>店家確認：{measurementLabel(r, true)}</small>
+                  )}
                 </div>
                 <span className="badge gray">
                   {r.status === 'accepted'
@@ -81,7 +77,7 @@ function Review({
                 draft.reviews[key] = note.trim()
               },
               notify,
-              '查核紀錄已儲存；異常仍需現場核驗。',
+              '查核紀錄已儲存；差異仍需人工核對。',
             )
           }}
         >
@@ -111,150 +107,72 @@ function Review({
   )
 }
 
-type ScenarioValues = Pick<
-  Store,
-  'binDistance' | 'publicCapacity' | 'collections' | 'overflow'
->
-function Scenario({
-  store,
-  notify,
-  onChange,
-}: { store: Store; onChange: (value: ScenarioValues) => void } & Pick<
-  PageProps,
-  'notify'
->) {
-  const [distance, setDistance] = useState(
-    store.binDistance == null ? '' : String(store.binDistance),
-  )
-  const [capacity, setCapacity] = useState(
-    store.publicCapacity == null ? '' : String(store.publicCapacity),
-  )
-  const [collections, setCollections] = useState(
-    store.collections == null ? '' : String(store.collections),
-  )
-  const [overflow, setOverflow] = useState(
-    store.overflow == null ? '' : String(store.overflow),
-  )
-  function submit(e: React.SubmitEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const values = [distance, capacity, collections, overflow].map(Number)
-    if (
-      [distance, capacity, collections, overflow].some((v) => !v.trim()) ||
-      values.some((v) => !Number.isFinite(v) || v < 0) ||
-      !Number.isInteger(values[2]) ||
-      !Number.isInteger(values[3])
-    ) {
-      notify('請輸入有效非負數，清運與滿溢次數須為整數。')
-      return
-    }
-    onChange({
-      binDistance: values[0],
-      publicCapacity: values[1],
-      collections: values[2],
-      overflow: values[3],
-    })
-    notify('模擬情境已更新，只用於本次畫面試算，未改寫店家或官方資料。')
-  }
-  return (
-    <form className="scenario-form" onSubmit={submit}>
-      <div className="fields">
-        <label>
-          最近垃圾桶距離（公尺）
-          <input
-            type="number"
-            min="0"
-            max="10000"
-            required
-            value={distance}
-            onChange={(e) => setDistance(e.target.value)}
-          />
-        </label>
-        <label>
-          垃圾桶容量（公升）
-          <input
-            type="number"
-            min="0"
-            max="10000"
-            step="0.1"
-            required
-            value={capacity}
-            onChange={(e) => setCapacity(e.target.value)}
-          />
-        </label>
-        <label>
-          每日清運次數
-          <input
-            type="number"
-            min="0"
-            max="50"
-            step="1"
-            required
-            value={collections}
-            onChange={(e) => setCollections(e.target.value)}
-          />
-        </label>
-        <label>
-          當日滿溢通報次數
-          <input
-            type="number"
-            min="0"
-            max="999"
-            step="1"
-            required
-            value={overflow}
-            onChange={(e) => setOverflow(e.target.value)}
-          />
-        </label>
-      </div>
-      <button className="button secondary full">更新模擬情境</button>
-    </form>
-  )
-}
-
 export function City({ data, notify }: PageProps) {
   const [day, setDay] = useState(dateKey())
   const [selected, setSelected] = useState(data.stores[0].id)
   const [onlyFlags, setOnlyFlags] = useState(false)
-  const [scenarios, setScenarios] = useState<Record<string, ScenarioValues>>({})
   const store = data.stores.find((s) => s.id === selected)!
-  const summaries = data.stores.map((s) => ({
-    store: s,
-    evidence: aggregate(data, s.id, day),
-    result: classification(data, s.id, day),
-    analysis: capacityAnalysis(data, s.id, day),
-  }))
-  const flags = summaries.filter(
-    (s) => s.result.level === 'high' || s.result.level === 'low',
-  )
-  const scenarioStore = { ...store, ...scenarios[selected] }
-  const analysis = capacityAnalysis(
-    {
-      ...data,
-      stores: data.stores.map((s) => (s.id === selected ? scenarioStore : s)),
-    },
-    selected,
-    day,
-  )
+  const summaries = data.stores.map((s) => {
+    const evidence = aggregateSizes(data, s.id, day)
+    const claim = data.sizeClaims[`${day}:${s.id}`]
+    const difference =
+      !!claim &&
+      (['S', 'M', 'L'] as const).some(
+        (size) => claim[size] !== evidence.confirmed[size],
+      )
+    return { store: s, evidence, claim, difference }
+  })
+  const flags = summaries.filter((s) => s.difference)
   return (
     <>
       <header className="page-header">
         <div>
-          <div className="eyebrow">讓城市決策，有跡可循</div>
+          <div className="eyebrow">讓城市評估，有資料可循</div>
           <h1>公共垃圾需求與收受分析</h1>
-          <p>比對民眾照片與店家申報，找到需要查核的差異、需要照顧的街角。</p>
+          <p>
+            依尺寸板分類觀察各點件數與申報差異，供政府評估；不是體積推算或政策結論。
+          </p>
         </div>
-        <label className="date-filter">
-          分析日期
-          <input
-            type="date"
-            value={day}
-            required
-            max={dateKey()}
-            onChange={(e) => {
-              if (e.target.value) setDay(e.target.value)
-            }}
-          />
-        </label>
+        <div className="city-date-navigation">
+          <label className="date-filter">
+            分析日期
+            <input
+              type="date"
+              value={day}
+              required
+              max={dateKey()}
+              onChange={(e) => {
+                if (e.target.value && e.target.value <= dateKey())
+                  setDay(e.target.value)
+              }}
+            />
+          </label>
+          <div className="actions">
+            <button
+              className="button secondary"
+              onClick={() => setDay(shiftDay(day, -1))}
+            >
+              前一天
+            </button>
+            <button
+              className="button secondary"
+              onClick={() => setDay(dateKey())}
+            >
+              今天
+            </button>
+            <button
+              className="button secondary"
+              disabled={day >= dateKey()}
+              onClick={() => setDay(shiftDay(day, 1))}
+            >
+              後一天
+            </button>
+          </div>
+          <strong>{dayLabel(day)}</strong>
+          <small>
+            以臺北時間統計；平日／週末依星期分類，未套用國定假日或補班行事曆。
+          </small>
+        </div>
       </header>
       <CityMapPanel
         data={data}
@@ -262,20 +180,32 @@ export function City({ data, notify }: PageProps) {
         selected={selected}
         onSelect={setSelected}
       />
+      <CityTimePanel
+        data={data}
+        store={store}
+        day={day}
+        onSelect={setSelected}
+      />
       <div className="metrics four">
         <Metric label="合作據點" value={data.stores.length} unit="間小店" />
         <Metric
-          label="已收受照片"
-          value={summaries.reduce((n, s) => n + s.evidence.count, 0)}
-          unit="筆獨立交付"
+          label="店家已確認"
+          value={summaries.reduce(
+            (n, s) => n + totalCounts(s.evidence.confirmed),
+            0,
+          )}
+          unit="件・尺寸板登記"
         />
         <Metric
-          label="照片模擬估計量"
-          value={number(summaries.reduce((n, s) => n + s.evidence.liters, 0))}
-          unit="公升・非實測"
+          label="店家當日申報"
+          value={summaries.reduce(
+            (n, s) => n + (s.claim ? totalCounts(s.claim) : 0),
+            0,
+          )}
+          unit="件・未申報不計入"
         />
         <Metric
-          label="待查核異常"
+          label="待核對差異"
           value={flags.length}
           unit="個據點・非違規判定"
           accent
@@ -284,7 +214,7 @@ export function City({ data, notify }: PageProps) {
       <section className="card comparison">
         <div className="card-head">
           <div>
-            <span className="eyebrow">01 / 雙方數據交叉比對</span>
+            <span className="eyebrow">01 / 雙方尺寸件數比對</span>
             <h2>同一天、同一個據點，一起看</h2>
           </div>
           <label className="check-label">
@@ -301,21 +231,17 @@ export function City({ data, notify }: PageProps) {
             <thead>
               <tr>
                 <th>合作收受點</th>
-                <th>照片估計量</th>
-                <th>店家申報量</th>
+                <th>民眾原登記</th>
+                <th>店家已確認</th>
+                <th>店家當日申報</th>
                 <th>比對結果</th>
                 <th>查核作業</th>
               </tr>
             </thead>
             <tbody>
               {summaries
-                .filter(
-                  (s) =>
-                    !onlyFlags ||
-                    s.result.level === 'high' ||
-                    s.result.level === 'low',
-                )
-                .map(({ store: s, evidence, result }) => (
+                .filter((s) => !onlyFlags || s.difference)
+                .map(({ store: s, evidence, claim, difference }) => (
                   <tr key={s.id}>
                     <td>
                       <b>{s.name}</b>
@@ -323,19 +249,16 @@ export function City({ data, notify }: PageProps) {
                       {day === dateKey() && <StoreStatus store={s} />}
                     </td>
                     <td>
-                      {number(evidence.liters)} 公升
-                      <small>{evidence.count} 筆已收受照片</small>
+                      {countsLabel(evidence.reported)}
+                      <small>已收受交付的原始填寫</small>
                     </td>
-                    <td>
-                      {data.claims[`${day}:${s.id}`] === undefined
-                        ? '尚未申報'
-                        : number(data.claims[`${day}:${s.id}`]) + ' 公升'}
-                    </td>
+                    <td>{countsLabel(evidence.confirmed)}</td>
+                    <td>{claim ? countsLabel(claim) : '尚未申報'}</td>
                     <td>
                       <span
-                        className={`badge ${result.level === 'normal' ? 'green' : result.level === 'missing' ? 'gray' : 'orange'}`}
+                        className={`badge ${difference ? 'orange' : claim ? 'green' : 'gray'}`}
                       >
-                        {result.label}
+                        {difference ? '待核對' : claim ? '件數一致' : '待申報'}
                       </span>
                     </td>
                     <td>
@@ -352,134 +275,20 @@ export function City({ data, notify }: PageProps) {
           </table>
         </div>
         {onlyFlags && !flags.length && (
-          <p className="empty">目前沒有待查核異常。</p>
+          <p className="empty">目前沒有待核對差異。</p>
         )}
         <div className="mini-note padded">
-          模擬門檻：申報高於照片上界 × 125%，或低於下界 × 75%
-          時提醒查核。有申報但無照片也需查核。差距可能來自未拍照交付，不可直接判定不實。
+          小件 10 × 15 公分、中件 15 × 20 公分、大件 20 × 30
+          公分。尺寸表示對照板外框分類，不是公升；每日申報與逐筆確認任一分類不符時提醒核對。
         </div>
       </section>
-      <div className="city-layout">
-        <div className="stack">
-          <Review
-            key={reviewKey(data, selected, day)}
-            data={data}
-            store={store}
-            day={day}
-            notify={notify}
-          />
-          <section className="card">
-            <div className="card-head">
-              <div>
-                <span className="eyebrow">資料觀測</span>
-                <h2>照片佐證與店家申報</h2>
-              </div>
-              <span className="badge gray">共同比例尺</span>
-            </div>
-            <div className="card-body bars">
-              {summaries.map(({ store: s, evidence }) => {
-                const claim = data.claims[`${day}:${s.id}`]
-                const max = Math.max(
-                  1,
-                  ...summaries.flatMap((v) => [
-                    v.evidence.liters,
-                    data.claims[`${day}:${v.store.id}`] || 0,
-                  ]),
-                )
-                return (
-                  <div className="bar-group" key={s.id}>
-                    <b>{s.name}</b>
-                    <div className="bar-row">
-                      <small>照片估計</small>
-                      <span className="bar-track">
-                        <i
-                          style={{ width: `${(evidence.liters / max) * 100}%` }}
-                        />
-                      </span>
-                      <span>{number(evidence.liters)} L</span>
-                    </div>
-                    <div className="bar-row">
-                      <small>店家申報</small>
-                      <span className="bar-track amber">
-                        <i
-                          style={{ width: `${((claim || 0) / max) * 100}%` }}
-                        />
-                      </span>
-                      <span>
-                        {claim === undefined ? '未申報' : number(claim) + ' L'}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-        </div>
-        <section className="card capacity-card">
-          <div className="card-head">
-            <div>
-              <span className="eyebrow">02 / 垃圾桶配置與清運量能</span>
-              <h2>這個街角，還需要什麼？</h2>
-            </div>
-          </div>
-          <div className="card-body">
-            <label>
-              分析合作據點
-              <select
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-              >
-                {data.stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="capacity-summary">
-              <span>模擬需求／日清運量能</span>
-              <div>
-                <b>{number(analysis.demand)}</b>
-                <span>／ {number(analysis.capacity)} 公升</span>
-              </div>
-              <progress
-                max="1"
-                value={
-                  Number.isFinite(analysis.utilization)
-                    ? Math.min(1, analysis.utilization)
-                    : 0
-                }
-                aria-label="模擬量能使用率"
-              />
-              <small>
-                需求與量能比：
-                {Number.isFinite(analysis.utilization)
-                  ? Math.round(analysis.utilization * 100) + '%'
-                  : '未知'}
-              </small>
-            </div>
-            <div className="recommendation">
-              <span>↗</span>
-              <p>{analysis.recommendation}</p>
-            </div>
-            <h3>調整模擬情境</h3>
-            <p className="muted">
-              下列為示範假設，可調整後觀察試算。修改只作用於本次畫面，不寫入店家或官方資料；尚未接入真實清運與滿溢資料，容量為單桶容量。
-            </p>
-            <Scenario
-              key={`${store.id}:${store.publicCapacity}:${store.collections}:${store.binDistance}:${store.overflow}`}
-              store={scenarioStore}
-              notify={notify}
-              onChange={(value) =>
-                setScenarios((previous) => ({ ...previous, [store.id]: value }))
-              }
-            />
-            <div className="mini-note">
-              政策研判仍需垃圾桶本身垃圾量、行人流量、長期滿溢與現場核驗。照片模擬值不可直接作為補助依據。
-            </div>
-          </div>
-        </section>
-      </div>
+      <Review
+        key={reviewKey(data, selected, day)}
+        data={data}
+        store={store}
+        day={day}
+        notify={notify}
+      />
     </>
   )
 }

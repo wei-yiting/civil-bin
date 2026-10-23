@@ -15,9 +15,7 @@ test('單檔 HTML 內嵌程式與快照，地圖連線時可完成交付', async
   ).toBeVisible()
   await page.getByRole('button', { name: '拍照交付', exact: true }).click()
   await page.getByRole('button', { name: '載入示範照片', exact: true }).click()
-  await page
-    .getByRole('button', { name: '模擬 AI 體積估算', exact: true })
-    .click()
+  await page.getByRole('checkbox', { name: /已用尺寸板逐件對照/ }).check()
   await page.getByRole('button', { name: '送出交付紀錄' }).click()
   await page.getByRole('button', { name: '店家端', exact: true }).click()
   await expect(
@@ -27,7 +25,7 @@ test('單檔 HTML 內嵌程式與快照，地圖連線時可完成交付', async
   await page.getByRole('button', { name: '市府端', exact: true }).click()
   await expect(
     page.getByRole('row').filter({ hasText: '阿明早餐店' }),
-  ).toContainText('10.0')
+  ).toContainText('件')
   await page.reload()
   await expect(
     page.getByRole('heading', { name: '公共垃圾需求與收受分析' }),

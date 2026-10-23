@@ -8,8 +8,9 @@ describe('雲端逐筆變更', () => {
     const after = structuredClone(before)
     after.stores[0].enabled = false
     after.claims['2030-01-01:a'] = 15
+    after.sizeClaims['2030-01-01:a'] = { S: 2, M: 3, L: 0 }
     const changes = cloudChanges(before, after)
-    expect(changes).toHaveLength(2)
+    expect(changes).toHaveLength(3)
     expect(changes[0]).toEqual({
       table: 'stores',
       id: before.stores[0].id,
@@ -21,6 +22,12 @@ describe('雲端逐筆變更', () => {
       id: '2030-01-01:a',
       expected: null,
       value: 15,
+    })
+    expect(changes[2]).toEqual({
+      table: 'sizeClaims',
+      id: '2030-01-01:a',
+      expected: null,
+      value: { S: 2, M: 3, L: 0 },
     })
     expect(before.stores[0].enabled).toBe(true)
   })

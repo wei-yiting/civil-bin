@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="230mm" height="350mm" viewBox="0 0 230 350">
+ <rect width="230" height="350" fill="#fffdf7"/>
+ <g font-family="sans-serif" fill="#164e3e"><text x="10" y="9" font-size="5" font-weight="bold">Civil Bin｜我們的垃圾桶</text><text x="10" y="18" font-size="3.5">隨手垃圾尺寸板 v1・每件對齊左下角，比較可完整放入的最小框</text></g>
+ <g stroke-width="0.7" fill="none"><rect x="10" y="25" width="200" height="300" stroke="#aa5d28"/><rect x="10" y="125" width="150" height="200" stroke="#368a85"/><rect x="10" y="175" width="100" height="150" stroke="#236347"/></g>
+ <g font-family="sans-serif" font-size="5" font-weight="bold"><text x="15" y="35" fill="#aa5d28">大件 L｜20 × 30 公分內</text><text x="15" y="135" fill="#368a85">中件 M｜15 × 20 公分內</text><text x="15" y="185" fill="#236347">小件 S｜10 × 15 公分內</text></g>
+ <path d="M5 320v10h10" fill="none" stroke="#164e3e" stroke-width="1"/>
+ <g fill="#164e3e" font-family="sans-serif" font-size="3.3"><text x="15" y="322">對齊此角，不可超出所選框</text><text x="10" y="333">僅量平面級距，不換算公升。超框、家戶垃圾、危險物品不適用。</text><text x="10" y="340">原尺寸 100% 印製・勿縮放・下方校正線須為 10 公分</text></g>
+ <path d="M10 343v4m0-2h100m0-2v4" fill="none" stroke="#164e3e" stroke-width="0.5"/><text x="115" y="347" font-family="sans-serif" font-size="3.5">10 cm</text>
+</svg>

@@ -1,10 +1,20 @@
 import { useCloudStatus } from './persistence'
 import { useNow } from './useNow'
 import { save } from './actions'
-import { useMemo, useState } from 'react'
-import { dateKey, estimate, isOpen, todayHoursLabel } from './domain'
-import type { Estimate } from './domain'
-import { preparePhoto, SAMPLE } from './photo'
+import { useMemo, useRef, useState } from 'react'
+import { nearbyPlaces } from './nearby'
+import type { NearbyPlace } from './nearby'
+import {
+  dateKey,
+  isOpen,
+  todayHoursLabel,
+  validateMeasurement,
+  measurementLabel,
+  isDemoDelivery,
+} from './domain'
+import type { SizeMeasurement } from './domain'
+import { MeasurementEditor, SizeBoardGuide } from './MeasurementEditor'
+import { preparePhoto, prepareSamplePhoto } from './photo'
 import { StoreStatus } from './ui'
 import { GeoMap } from './GeoMap'
 import { BinSource } from './BinSource'
@@ -29,10 +39,19 @@ export function Citizen({ data, notify }: PageProps) {
   const [photo, setPhoto] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [kind, setKind] = useState('飲料杯／容器')
-  const [reference, setReference] = useState(true)
-  const [result, setResult] = useState<Estimate | null>(null)
+  const [measurement, setMeasurement] = useState<SizeMeasurement>({
+    boardVersion: 'street-v1',
+    size: 'S',
+    quantity: 1,
+  })
+  const [compared, setCompared] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
+  const historyRef = useRef<HTMLElement>(null)
+  const [visibleNearby, setVisibleNearby] = useState({ key: '', count: 8 })
+  const [visibleOther, setVisibleOther] = useState({ key: '', count: 8 })
+  function scrollHistory() {
+    historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   const [showBins, setShowBins] = useState(true)
   const [showPartners, setShowPartners] = useState(true)
   const [focusToken, setFocusToken] = useState(0)
@@ -50,20 +69,23 @@ export function Citizen({ data, notify }: PageProps) {
     () =>
       data.stores.filter(
         (s) =>
-          `${s.name}${s.area}`.includes(query.trim()) &&
+          `${s.name}${s.area}${s.address}`.includes(query.trim()) &&
           (!onlyOpen || isOpen(s, new Date(now))),
       ),
     [data.stores, query, onlyOpen, now],
   )
   const history = data.deliveries.filter(
-    (r) =>
-      r.storeId === selected &&
-      r.date === dateKey() &&
-      !r.id.startsWith('sample-'),
+    (r) => r.date === dateKey() && r.measurement && !isDemoDelivery(r),
   )
 
   async function submit() {
-    if (busy || !photo || !result) return
+    if (busy || !photo || !compared) return
+    try {
+      validateMeasurement(measurement)
+    } catch (error) {
+      notify((error as Error).message)
+      return
+    }
     if (!isOpen(store)) {
       notify('此據點目前不在收受時段，請選擇其他據點。')
       return
@@ -77,7 +99,10 @@ export function Citizen({ data, notify }: PageProps) {
           date: dateKey(),
           createdAt: new Date().toISOString(),
           kind,
-          ...result,
+          liters: 0,
+          low: 0,
+          high: 0,
+          measurement: { ...measurement },
           photo,
           source: 'photo',
           status: 'pending',
@@ -90,19 +115,78 @@ export function Citizen({ data, notify }: PageProps) {
     setBusy(false)
     if (done) {
       setPhoto(null)
-      setResult(null)
+      setCompared(false)
       setShowUpload(false)
-      setShowHistory(true)
+      requestAnimationFrame(scrollHistory)
     }
   }
-  const ordered = [...shown].sort(
-    (a, b) =>
-      (hasCoordinates(a) ? haversineMeters(origin, a) : Infinity) -
-      (hasCoordinates(b) ? haversineMeters(origin, b) : Infinity),
+  const filteredBins = useMemo(
+    () =>
+      publicBins.bins.filter((bin) =>
+        `${bin.district}${bin.address}`.includes(query.trim()),
+      ),
+    [publicBins.bins, query],
   )
-  const nearbyBins = [...publicBins.bins]
-    .sort((a, b) => haversineMeters(origin, a) - haversineMeters(origin, b))
-    .slice(0, 5)
+  const places = nearbyPlaces(
+    origin,
+    showPartners ? shown : [],
+    showBins ? filteredBins : [],
+    new Date(now),
+  )
+  const listKey = `${origin.lat}:${origin.lng}:${query}:${onlyOpen}:${showBins}:${showPartners}`
+  const nearbyLimit = visibleNearby.key === listKey ? visibleNearby.count : 8
+  const otherLimit = visibleOther.key === listKey ? visibleOther.count : 8
+  function renderPlace(entry: NearbyPlace) {
+    if (entry.type === 'store') {
+      const s = entry.place
+      return (
+        <button
+          className={`nearby-place ${selected === s.id && !selectedBin ? 'selected' : ''}`}
+          key={`store:${s.id}`}
+          aria-pressed={selected === s.id && !selectedBin}
+          onClick={() => {
+            setSelected(s.id)
+            setSelectedBin(null)
+          }}
+        >
+          <span className="place-icon">▤</span>
+          <span>
+            <b>
+              {s.name}
+              {s.isDemo && <small>示範</small>}
+            </b>
+            <small>
+              {s.area}・{todayHoursLabel(s)}
+            </small>
+          </span>
+          <span className="place-right">
+            <StoreStatus store={s} />
+            <small>{formatDistance(entry.distance)}</small>
+          </span>
+        </button>
+      )
+    }
+    const bin = entry.place
+    return (
+      <button
+        className="nearby-place bin-place"
+        key={`bin:${bin.id}`}
+        aria-pressed={selectedBin?.id === bin.id}
+        onClick={() => setSelectedBin(bin)}
+      >
+        <span className="place-icon">♲</span>
+        <span>
+          <b>{bin.address}</b>
+          <small>
+            {bin.district}・官方位置{bin.note ? '・' + bin.note : ''}
+          </small>
+        </span>
+        <span className="place-right">
+          <small>{formatDistance(entry.distance)}</small>
+        </span>
+      </button>
+    )
+  }
   const closest = nearestBin(store, publicBins.bins)
   return (
     <div className="citizen-app">
@@ -114,7 +198,7 @@ export function Citizen({ data, notify }: PageProps) {
         <button
           className="round-action"
           aria-label="查看交付紀錄"
-          onClick={() => setShowHistory(!showHistory)}
+          onClick={scrollHistory}
         >
           ◷
         </button>
@@ -125,7 +209,7 @@ export function Citizen({ data, notify }: PageProps) {
           aria-label="搜尋店家或街區"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜尋合作店家、街區"
+          placeholder="搜尋合作店家、街區、清潔箱地址"
         />
         <button
           aria-label="清除搜尋"
@@ -165,7 +249,7 @@ export function Citizen({ data, notify }: PageProps) {
       <section className="citizen-map-stage" aria-label="附近的收受位置">
         <GeoMap
           stores={showPartners ? shown : undefined}
-          bins={showBins ? publicBins.bins : undefined}
+          bins={showBins ? filteredBins : undefined}
           selected={selected}
           filterToken={query}
           onSelect={(id) => {
@@ -256,76 +340,96 @@ export function Citizen({ data, notify }: PageProps) {
           </button>
         </section>
       )}
-      <section className="nearby-section">
+      <section className="nearby-section" aria-label="1 公里內的附近據點">
         <div className="nearby-heading">
-          <h2>{showPartners ? '附近合作店家' : '附近公共清潔箱'}</h2>
-          <span>依搜尋中心直線距離排序</span>
+          <h2>1 公里內的附近據點</h2>
+          <span>{places.nearby.length} 處・依直線距離排序</span>
         </div>
-        {showPartners &&
-          ordered.map((s) => (
-            <button
-              className={`nearby-place ${selected === s.id && !selectedBin ? 'selected' : ''}`}
-              key={s.id}
-              aria-pressed={selected === s.id}
-              onClick={() => {
-                setSelected(s.id)
-                setSelectedBin(null)
-              }}
-            >
-              <span className="place-icon">▤</span>
-              <span>
-                <b>
-                  {s.name}
-                  {s.isDemo && <small>示範</small>}
-                </b>
-                <small>
-                  {s.area}・{todayHoursLabel(s)}
-                </small>
-              </span>
-              <span className="place-right">
-                <StoreStatus store={s} />
-                <small>
-                  {hasCoordinates(s)
-                    ? formatDistance(haversineMeters(origin, s))
-                    : '位置未設定'}
-                </small>
-              </span>
-            </button>
-          ))}
-        {showPartners && !ordered.length && (
-          <p className="empty">沒有符合的店家，請調整搜尋或查看公共清潔箱。</p>
+        {places.nearby.slice(0, nearbyLimit).map(renderPlace)}
+        {!places.nearby.length && (
+          <p className="empty">
+            1 公里內沒有符合的清潔箱或收受中店家，請調整搜尋或查看其他據點。
+          </p>
         )}
-        {showBins && (
-          <>
-            <div className="nearby-heading">
-              <h3>鄰近公共清潔箱</h3>
-              <span>官方設置位置</span>
-            </div>
-            {nearbyBins.map((b) => (
-              <button
-                className="nearby-place bin-place"
-                key={b.id}
-                onClick={() => setSelectedBin(b)}
-              >
-                <span className="place-icon">♲</span>
-                <span>
-                  <b>{b.address}</b>
-                  <small>
-                    {b.district}
-                    {b.note ? '・' + b.note : ''}
-                  </small>
-                </span>
-                <span className="place-right">
-                  <small>{formatDistance(haversineMeters(origin, b))}</small>
-                </span>
-              </button>
-            ))}
-          </>
+        {places.nearby.length > nearbyLimit && (
+          <button
+            className="button secondary full"
+            onClick={() =>
+              setVisibleNearby({ key: listKey, count: nearbyLimit + 8 })
+            }
+          >
+            顯示更多附近據點（尚有 {places.nearby.length - nearbyLimit} 處）
+          </button>
         )}
         <p className="mini-note">
-          合作店家只收少量行人垃圾；家戶垃圾與事業廢棄物請循原清運管道。示範店家不代表現場提供服務。
+          官方清潔箱僅提供設置位置，不代表即時容量或可用狀態。合作店家只收少量行人垃圾；示範店家不代表現場提供服務。
         </p>
       </section>
+      <section
+        ref={historyRef}
+        className="card history-card"
+        style={{ scrollMarginTop: 20 }}
+        data-testid="citizen-history"
+      >
+        <div className="card-head">
+          <div>
+            <span className="eyebrow">03 / 追蹤交付狀態</span>
+            <h2>我今天的交付紀錄</h2>
+          </div>
+          <span className="badge gray">{history.length} 筆</span>
+        </div>
+        <div className="card-body">
+          {history.length ? (
+            history.map((r) => (
+              <div className="history-row" key={r.id}>
+                <span>
+                  {r.kind}
+                  <small>
+                    {data.stores.find((s) => s.id === r.storeId)?.name ??
+                      '合作店家'}
+                  </small>
+                </span>
+                <b>{measurementLabel(r)}</b>
+                {r.confirmedMeasurement && (
+                  <small>店家確認：{measurementLabel(r, true)}</small>
+                )}
+                <span
+                  className={`badge ${r.status === 'rejected' ? 'orange' : 'green'}`}
+                >
+                  {r.status === 'pending'
+                    ? '待店家確認'
+                    : r.status === 'accepted'
+                      ? '已收受'
+                      : '已拒收'}
+                </span>
+                {r.reason && <small>{r.reason}</small>}
+              </div>
+            ))
+          ) : (
+            <p className="muted">完成交付後，可以在這裡查看店家確認結果。</p>
+          )}
+        </div>
+      </section>
+      <details className="nearby-section" aria-label="其他據點">
+        <summary>
+          其他據點（1 公里外／暫未收受）・{places.other.length} 處
+        </summary>
+        <p className="mini-note">
+          距離較遠的清潔箱、收受中店家，以及目前停收的店家，依搜尋中心直線距離排序。
+        </p>
+        {places.other.slice(0, otherLimit).map(renderPlace)}
+        {!places.other.length && <p className="empty">沒有其他符合的據點。</p>}
+        {places.other.length > otherLimit && (
+          <button
+            className="button secondary full"
+            onClick={() =>
+              setVisibleOther({ key: listKey, count: otherLimit + 8 })
+            }
+          >
+            顯示更多其他據點（尚有 {places.other.length - otherLimit} 處）
+          </button>
+        )}
+      </details>
       <BinSource resource={publicBins} />
       {showUpload && (
         <div className="delivery-overlay">
@@ -348,7 +452,7 @@ export function Citizen({ data, notify }: PageProps) {
                   <span className="eyebrow">02 / 到店拍照交付</span>
                   <h2>讓這次交付留下紀錄</h2>
                 </div>
-                <span className="step-label">拍照 → 估算 → 確認</span>
+                <span className="step-label">拍照 → 尺寸對照 → 確認</span>
               </div>
               <div className="card-body">
                 <div className="chosen-store" data-testid="delivery-store">
@@ -386,7 +490,7 @@ export function Citizen({ data, notify }: PageProps) {
                         e.target.value = ''
                         if (!file) return
                         setBusy(true)
-                        setResult(null)
+                        setCompared(false)
                         setPhoto(null)
                         try {
                           setPhoto(await preparePhoto(file))
@@ -402,9 +506,16 @@ export function Citizen({ data, notify }: PageProps) {
                   <button
                     className="text-button"
                     disabled={busy}
-                    onClick={() => {
-                      setPhoto(SAMPLE)
-                      setResult(null)
+                    onClick={async () => {
+                      setBusy(true)
+                      setCompared(false)
+                      try {
+                        setPhoto(await prepareSamplePhoto())
+                      } catch (error) {
+                        notify((error as Error).message)
+                      } finally {
+                        setBusy(false)
+                      }
                     }}
                   >
                     載入示範照片
@@ -417,7 +528,7 @@ export function Citizen({ data, notify }: PageProps) {
                       value={kind}
                       onChange={(e) => {
                         setKind(e.target.value)
-                        setResult(null)
+                        setCompared(false)
                       }}
                     >
                       {[
@@ -430,40 +541,27 @@ export function Citizen({ data, notify }: PageProps) {
                       ))}
                     </select>
                   </label>
-                  <label>
-                    尺寸參考
-                    <select
-                      value={reference ? 'yes' : 'no'}
-                      onChange={(e) => {
-                        setReference(e.target.value === 'yes')
-                        setResult(null)
-                      }}
-                    >
-                      <option value="yes">有尺寸參考卡</option>
-                      <option value="no">沒有參考物</option>
-                    </select>
-                  </label>
                 </div>
-                <button
-                  className="button secondary full"
-                  disabled={!photo || busy}
-                  onClick={() => setResult(estimate(kind, reference))}
-                >
-                  模擬 AI 體積估算
-                </button>
-                {result && (
-                  <div className="estimate" data-testid="estimate">
-                    <span>✧</span>
-                    <div>
-                      <small>模擬估算結果・非影像辨識</small>
-                      <strong>
-                        {result.low.toFixed(1)}–{result.high.toFixed(1)}{' '}
-                        <small>公升</small>
-                      </strong>
-                      <span>依垃圾類型預設，不能用於重量或補助核算。</span>
-                    </div>
-                  </div>
-                )}
+                <MeasurementEditor
+                  value={measurement}
+                  onChange={(next) => {
+                    setMeasurement(next)
+                    setCompared(false)
+                  }}
+                />
+                <SizeBoardGuide />
+                <label className="check-label">
+                  <input
+                    type="checkbox"
+                    checked={compared}
+                    onChange={(event) => setCompared(event.target.checked)}
+                  />
+                  已用尺寸板逐件對照，且都完整放入所選尺寸框
+                </label>
+                <p className="mini-note">
+                  超過 20 × 30
+                  公分框的垃圾不適用，請使用原清運管道；這裡只收少量行人隨手垃圾。
+                </p>
                 <p className="privacy-note">
                   {cloud.configured
                     ? '送出後照片會上傳到 private 儲存空間，供本人、收受店家與市府查看；目前不會傳送給 AI。'
@@ -471,7 +569,15 @@ export function Citizen({ data, notify }: PageProps) {
                 </p>
                 <button
                   className="button full"
-                  disabled={!photo || !result || busy || !isOpen(store)}
+                  disabled={
+                    !photo ||
+                    !compared ||
+                    !Number.isInteger(measurement.quantity) ||
+                    measurement.quantity < 1 ||
+                    measurement.quantity > 99 ||
+                    busy ||
+                    !isOpen(store)
+                  }
                   onClick={submit}
                 >
                   送出交付紀錄<span>→</span>
@@ -481,51 +587,10 @@ export function Citizen({ data, notify }: PageProps) {
           </section>
         </div>
       )}
-      {showHistory && (
-        <div className="citizen-history-panel">
-          <button className="text-button" onClick={() => setShowHistory(false)}>
-            收合交付紀錄
-          </button>{' '}
-          <section className="card history-card" data-testid="citizen-history">
-            <div className="card-head">
-              <div>
-                <span className="eyebrow">03 / 追蹤交付狀態</span>
-                <h2>今日在 {store.name} 的新增紀錄</h2>
-              </div>
-              <span className="badge gray">{history.length} 筆</span>
-            </div>
-            <div className="card-body">
-              {history.length ? (
-                history.map((r) => (
-                  <div className="history-row" key={r.id}>
-                    <span>{r.kind}</span>
-                    <b>{r.liters.toFixed(1)} 公升</b>
-                    <span
-                      className={`badge ${r.status === 'rejected' ? 'orange' : 'green'}`}
-                    >
-                      {r.status === 'pending'
-                        ? '待店家確認'
-                        : r.status === 'accepted'
-                          ? '已收受'
-                          : '已拒收'}
-                    </span>
-                    {r.reason && <small>{r.reason}</small>}
-                  </div>
-                ))
-              ) : (
-                <p className="muted">
-                  完成交付後，可以在這裡查看店家確認結果。
-                </p>
-              )}
-            </div>
-          </section>
-        </div>
-      )}
       <nav className="citizen-bottom-nav" aria-label="民眾功能">
         <button
-          aria-current={!showHistory ? 'page' : undefined}
+          aria-label="附近地圖"
           onClick={() => {
-            setShowHistory(false)
             window.scrollTo({ top: 0, behavior: 'smooth' })
           }}
         >
@@ -534,10 +599,7 @@ export function Citizen({ data, notify }: PageProps) {
         <button aria-label="拍照交付" onClick={() => setShowUpload(true)}>
           ◎<span>拍照交付</span>
         </button>
-        <button
-          aria-current={showHistory ? 'page' : undefined}
-          onClick={() => setShowHistory(true)}
-        >
+        <button onClick={scrollHistory}>
           ◷<span>交付紀錄</span>
         </button>
       </nav>

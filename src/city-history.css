@@ -1,0 +1,65 @@
+.city-date-navigation {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 28rem;
+}
+.city-date-navigation .actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.city-date-navigation small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.city-time-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.city-time-summary small,
+.city-time-summary b {
+  display: block;
+}
+.city-time-summary small {
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.city-hourly-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.city-hourly-row {
+  display: grid;
+  grid-template-columns: 8rem minmax(3rem, 1fr) minmax(13rem, auto);
+  align-items: center;
+  gap: 1rem;
+}
+.city-hourly-row progress {
+  width: 100%;
+  accent-color: #17816b;
+}
+.city-record-details {
+  margin-top: 1.5rem;
+}
+.city-record-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0.75rem 0;
+}
+@media (max-width: 700px) {
+  .city-time-summary {
+    grid-template-columns: 1fr;
+  }
+  .city-hourly-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+  }
+  .city-hourly-row span {
+    grid-column: 1 / -1;
+  }
+  .city-date-navigation {
+    width: 100%;
+  }
+}

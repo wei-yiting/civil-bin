@@ -105,6 +105,8 @@ describe('Supabase transport', () => {
     expect(result.state.deliveries[0].photo).toBe(
       'https://signed.example/photo',
     )
+    expect(result.state.version).toBe(4)
+    expect(result.state.sizeClaims).toEqual(state.sizeClaims)
     expect(result.status.ready).toBe(true)
     expect(createSignedUrl).toHaveBeenCalledWith('citizen-id/photo-id', 3600)
   })
