@@ -1,0 +1,116 @@
+:root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Noto Sans TC', 'Microsoft JhengHei',
+    sans-serif;
+  color: #193f3c;
+  background: #f5f7f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.6;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button,
+input,
+select,
+textarea {
+  outline-offset: 4px;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #74bba3;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: 30px;
+  line-height: 1.4;
+  letter-spacing: -0.04em;
+  font-weight: 750;
+}
+h2 {
+  font-size: 18px;
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+a {
+  color: inherit;
+}
+img {
+  max-width: 100%;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 650;
+  color: #45615c;
+}
+input:not([type='checkbox']):not([type='file']),
+select,
+textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d9e3da;
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: white;
+  color: #25443f;
+  font-size: 13px;
+  min-height: 41px;
+}
+textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+input[type='checkbox'] {
+  accent-color: #24745c;
+  width: 15px;
+  height: 15px;
+}
+small {
+  font-size: 11px;
+}
+p {
+  line-height: 1.8;
+}
+button {
+  transition:
+    background 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+button:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
