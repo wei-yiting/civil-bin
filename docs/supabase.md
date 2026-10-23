@@ -1,6 +1,6 @@
 # Supabase 與 Vercel 部署
 
-目前預設仍是本機 localStorage。程式已提供真正的 Supabase adapter，但雲端資料表與帳號仍需初始化，尚未完成實際雲端流程驗收。設定雲端後，連線失敗會阻擋寫入，不會偷偷改存本機。本版改用尺寸板人工登記，不串接影像模型。
+兩個 env 均空白時使用本機 localStorage；目前使用者的 Supabase 已完成初始化與三個本機 origin 的雲端交付流程驗證。以下初始化步驟供新專案使用，不必重跑既有 migration。設定雲端後，連線失敗會阻擋寫入，不會偷偷改存本機。本版改用尺寸板人工登記，不串接影像模型。
 
 ## 1. 建立 Supabase project
 
@@ -9,11 +9,13 @@
 1. 在 https://supabase.com/dashboard 建立新 project，保管 DB 密碼。
 2. 到 Authentication → Sign In / Providers 啟用 Anonymous Sign-Ins。公開展示的 CAPTCHA 與用量限制需另外設定，本版尚未整合 CAPTCHA UI。
 3. 到 SQL Editor 新增查詢，依序執行 `supabase/migrations/202610240001_civil_bin.sql`、`supabase/migrations/202610240002_size_board.sql`，各一次。它會建立業務資料表、RLS、交易 RPC、private 照片 bucket 與 Realtime publication。
-4. 在 repo 執行 `npm run seed:cloud`，將生成的 `supabase/seed.sql` 貼入 SQL Editor 執行。預載 24 間虛構店家及多日交付與申報，不覆寫既有資料。示範 delivery ID 包含日期，同日不重複新增，隔日保留歷史。清空共享資料需由管理員明確操作。
+4. 在 repo 執行 `npm run seed:cloud`，將生成的 `supabase/seed.sql` 貼入 SQL Editor 執行。預載 270 間虛構店家及多日交付與申報，不覆寫既有資料。示範 delivery ID 包含日期，同日不重複新增，隔日保留歷史。清空共享資料需由管理員明確操作。
 
 已完成第一版初始化的專案，只執行 `002_size_board.sql` 與 `supabase/seed-sizes.sql`，不要重跑 `001`。新版新增 civil_size_claims、尺寸登記及確認權限，舊公升資料保留。
 
 若要增加深夜可開放的虛構示範點，執行 `supabase/demo-open-hours.sql`。只更新無 owner、且仍是原始排程的 16 家示範店，已自訂或認領店家不變。
+
+擴充現有 24 家資料時，依序執行 `supabase/demo-expand-parts/part-01.sql` 到 `part-06.sql`，每次只貼一份。不要在 SQL Editor 貼整份 `demo-expand.sql`，因為會超過大小限制。詳見 [選點與匯入說明](demo-stores.md)。
 
 ## 2. 建立 demo 店家、市府帳號
 
@@ -68,7 +70,7 @@ GitHub Pages 不會自動取得 Vercel 的環境變數；保留本機示範模�
 
 啟動 Docker 後執行 `npm run test:db`。它會建立未對外開放連接埠的暫存 PostgreSQL 16 容器，套用 migration，測試角色權限、照片路徑權限、交付確認、重複處理、申報衝突及停收阻擋，完成後刪除容器。測試使用簡化的 Auth／Storage schema，不能取代實際 Supabase 的 Auth、Storage、Realtime 驗證。
 
-市府的清運情境是畫面試算，不會把假設值寫入共享店家或官方資料。
+市府使用尺寸件數及加權比較，不將平面尺寸換算公升。
 
 ## 官方參考
 
@@ -76,3 +78,7 @@ GitHub Pages 不會自動取得 Vercel 的環境變數；保留本機示範模�
 - https://supabase.com/docs/guides/database/postgres/row-level-security
 - https://supabase.com/docs/reference/javascript/storage-from-createsignedurl
 - https://supabase.com/docs/reference/javascript/subscribe
+
+## 同一瀏覽器展示三種角色
+
+部署後可使用三個固定入口：`/?demoSession=citizen#citizen`、`/?demoSession=merchant#merchant`、`/?demoSession=city#city`。每個入口使用獨立登入儲存，避免同一瀏覽器的帳號互相取代；這只是展示登入隔離，實際角色與資料權限仍由 Supabase RLS／RPC 判斷。店家與市府各自首次登入一次即可，不用提供密碼給開發者。未帶參數的既有網址登入不受影響。

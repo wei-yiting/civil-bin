@@ -1,0 +1,13 @@
+.git
+.env*
+.vercel
+node_modules
+dist
+work
+docs
+originals
+tests
+test-results
+playwright-report
+*.log
+supabase

@@ -52,6 +52,11 @@ try {
     'supabase/seed.sql',
     'supabase/seed-sizes.sql',
     'supabase/seed-sizes.sql',
+    ...(await readdir('supabase/demo-expand-parts'))
+      .filter((name) => name.endsWith('.sql'))
+      .sort()
+      .map((name) => `supabase/demo-expand-parts/${name}`),
+    'supabase/demo-expand.sql',
   ]) {
     const sql = await readFile(path, 'utf8')
     docker(

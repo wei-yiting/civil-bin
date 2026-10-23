@@ -31,3 +31,9 @@ test-results
 !.env.example
 
 work/
+
+.vercel/
+.vercel
+.env*
+
+!.env.example

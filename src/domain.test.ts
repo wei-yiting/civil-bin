@@ -1,3 +1,5 @@
+import publicBins from './data/public-bins.json'
+import { haversineMeters } from './geo'
 import { describe, expect, it } from 'vitest'
 import {
   defaultWeeklyHours,
@@ -181,7 +183,7 @@ describe('註冊與資料遷移', () => {
   it('註冊新店保留未知量能且不建立假申報', () => {
     const state = seedState()
     const store = registerStore(state, input)
-    expect(state.stores).toHaveLength(24)
+    expect(state.stores).toHaveLength(270)
     expect(store).toMatchObject({
       ...input,
       isDemo: false,
@@ -195,7 +197,7 @@ describe('註冊與資料遷移', () => {
     expect(classification(state, store.id).level).toBe('missing')
     expect(Number.isNaN(capacityAnalysis(state, store.id).capacity)).toBe(true)
     expect(migrateState(JSON.parse(JSON.stringify(state))).stores).toHaveLength(
-      25,
+      271,
     )
   })
   it('拒絕空欄、無效時段、臺北範圍外及重複店家', () => {
@@ -297,9 +299,9 @@ describe('每週時段與當日停收', () => {
     hours[0]!.start = '25:00'
     expect(() => validateWeeklyHours(hours)).toThrow()
   })
-  it('24 店涵蓋十二行政區，新增店有多日交付且不偽造公共量能', () => {
+  it('270 店涵蓋十二行政區，新增店有多日交付且不偽造公共量能', () => {
     const state = seedState()
-    expect(state.stores).toHaveLength(24)
+    expect(state.stores).toHaveLength(270)
     expect(new Set(state.stores.slice(3).map((s) => s.area)).size).toBe(12)
     for (const store of state.stores.slice(3)) {
       expect(store.isDemo).toBe(true)
@@ -310,7 +312,7 @@ describe('每週時段與當日停收', () => {
       expect(store.publicCapacity).toBeNull()
     }
   })
-  it('深夜仍有 19 家可收受示範點，保留五家不同時段與停收情境', () => {
+  it('深夜仍有 265 家可收受示範點，保留五家不同時段與停收情境', () => {
     const state = seedState()
     const now = new Date('2026-10-24T01:50:00+08:00')
     const fullDay = state.stores
@@ -321,8 +323,8 @@ describe('每週時段與當日停收', () => {
             !hours.closed && hours.start === '00:00' && hours.end === '23:59',
         ),
       )
-    expect(fullDay).toHaveLength(16)
-    expect(state.stores.filter((store) => isOpen(store, now))).toHaveLength(19)
+    expect(fullDay).toHaveLength(262)
+    expect(state.stores.filter((store) => isOpen(store, now))).toHaveLength(265)
     const varied = state.stores
       .slice(3)
       .filter((store) => store.weeklyHours.some((hours) => hours.closed))
@@ -354,7 +356,7 @@ describe('每週時段與當日停收', () => {
     }
     original.stores[0]!.enabled = false
     const migrated = migrateState(original)
-    expect(migrated.stores).toHaveLength(24)
+    expect(migrated.stores).toHaveLength(270)
     expect(migrated.stores[0]!.enabled).toBe(false)
     expect(migrated.claims[`${dateKey()}:a`]).toBe(99)
     expect(migrated.deliveries.slice(0, original.deliveries.length)).toEqual(
@@ -362,5 +364,65 @@ describe('每週時段與當日停收', () => {
     )
     expect(migrated.reviews.old).toBe('已查核')
     expect(migrateState(migrated)).toEqual(migrated)
+  })
+})
+
+describe('示範合作網擴充', () => {
+  it('店數至少為清潔箱三分之一，名稱與 ID 唯一且不冒充真實店家', () => {
+    const state = seedState()
+    expect(state.stores.length).toBeGreaterThanOrEqual(Math.ceil(773 / 3))
+    expect(new Set(state.stores.map((s) => s.id)).size).toBe(270)
+    expect(new Set(state.stores.map((s) => s.name)).size).toBe(270)
+    expect(
+      state.stores.every((s) => !s.name.includes('示範') && s.isDemo),
+    ).toBe(true)
+    expect(
+      state.stores.slice(24).filter((s) => s.binDistance! >= 150).length,
+    ).toBeGreaterThanOrEqual(185)
+  })
+  it('清潔箱距離由公開座標實算，示範照片不超出本機儲存預算', () => {
+    const state = seedState()
+    for (const store of state.stores) {
+      const nearest = Math.min(
+        ...publicBins.bins.map((bin) =>
+          haversineMeters({ lat: store.lat!, lng: store.lng! }, bin),
+        ),
+      )
+      expect(Math.abs(store.binDistance! - nearest)).toBeLessThanOrEqual(0.5)
+    }
+    expect(state.deliveries.filter((r) => !r.measurement)).toHaveLength(291)
+    const photoSize = 1000
+    const productionLength = JSON.stringify(
+      state.deliveries.map((r) => ({
+        ...r,
+        photo: r.photo ? 'x'.repeat(photoSize) : null,
+      })),
+    ).length
+    expect(productionLength * 2).toBeLessThan(4_500_000)
+  })
+  it('既有本機 24 店補新據點與尺寸申報，保留自訂並可重複載入', () => {
+    const seed = seedState()
+    const stores = structuredClone(seed.stores.slice(0, 24))
+    stores[3]!.name = '公園口夥伴小店（示範）'
+    stores[4]!.name = '自己的店名'
+    const old = {
+      ...seed,
+      stores,
+      deliveries: seed.deliveries.filter((r) =>
+        stores.some((s) => s.id === r.storeId),
+      ),
+      sizeClaims: Object.fromEntries(
+        Object.entries(seed.sizeClaims).filter(([key]) =>
+          stores.some((s) => s.id === key.slice(11)),
+        ),
+      ),
+    }
+    const migrated = migrateState(old)
+    expect(migrated.stores).toHaveLength(270)
+    expect(migrated.stores[4]!.name).toBe('自己的店名')
+    expect(migrated.stores[3]!.name).toBe(seed.stores[3]!.name)
+    expect(migrated.sizeClaims[`${dateKey()}:demo-23`]).toBeDefined()
+    expect(migrateState(migrated)).toEqual(migrated)
+    expect(migrateState(old, false).stores).toHaveLength(24)
   })
 })

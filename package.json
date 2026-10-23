@@ -14,7 +14,8 @@
     "format:check": "prettier --check src tests scripts server api *.ts *.json .github README.md docs/*.md",
     "data:update": "node --experimental-strip-types scripts/update-bins.mjs",
     "test:db": "node scripts/test-db.mjs",
-    "seed:cloud": "node scripts/seed-cloud.mjs"
+    "seed:cloud": "node scripts/seed-cloud.mjs",
+    "seed:stores": "node scripts/generate-demo-stores.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -38,6 +39,6 @@
     "vitest": "^5.0.5"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": "22.x"
   }
 }

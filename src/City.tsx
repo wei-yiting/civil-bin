@@ -186,6 +186,12 @@ export function City({ data, notify }: PageProps) {
           </small>
         </div>
       </header>
+      {store?.selectionReason && (
+        <p className="mini-note">
+          示範選點依據：{store.selectionReason}。距最近公開清潔箱約{' '}
+          {store.binDistance} 公尺（直線）；不是實際簽約或已確認的人流需求。
+        </p>
+      )}
       {!store ? (
         <section aria-label="全市總覽" className="city-overview">
           <div className="metrics four">

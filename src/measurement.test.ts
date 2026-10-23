@@ -154,7 +154,9 @@ describe('人工量測板的尺寸與件數', () => {
   })
   it('每個示範點有三天的尺寸紀錄，舊公升總量未改變', () => {
     const state = seedState()
-    expect(state.deliveries.filter((r) => r.measurement)).toHaveLength(216)
+    expect(state.deliveries.filter((r) => r.measurement)).toHaveLength(
+      state.stores.length * 9,
+    )
     expect(
       state.stores.every((store) => aggregateSizes(state, store.id).total > 0),
     ).toBe(true)

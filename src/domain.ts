@@ -1,3 +1,4 @@
+import demoStores from './data/demo-stores.json'
 import sampleWaste from './assets/sample-waste.svg'
 import { hasCoordinates } from './geo'
 import {
@@ -62,6 +63,7 @@ export interface Store {
   lng: number | null
   isDemo: boolean
   binDistance: number | null
+  selectionReason?: string
   publicCapacity: number | null
   collections: number | null
   overflow: number | null
@@ -129,86 +131,9 @@ export function dateKey(now = new Date()): string {
 
 export function seedState(): State {
   const date = dateKey()
-  const stores: Store[] = [
-    {
-      lat: 25.0588,
-      lng: 121.5434,
-      isDemo: true,
-      id: 'a',
-      name: '阿明早餐店',
-      area: '中山區',
-      address: '民生東路商圈示範點 A（非真實地址）',
-      x: 25,
-      y: 26,
-      binDistance: 70,
-      publicCapacity: 20,
-      collections: 1,
-      overflow: 3,
-    },
-    {
-      lat: 25.0572,
-      lng: 121.547,
-      isDemo: true,
-      id: 'b',
-      name: '惠姐雜貨店',
-      area: '松山區',
-      address: '市場周邊示範點 B（非真實地址）',
-      x: 67,
-      y: 25,
-      binDistance: 480,
-      publicCapacity: 10,
-      collections: 1,
-      overflow: 0,
-    },
-    {
-      lat: 25.0552,
-      lng: 121.5406,
-      isDemo: true,
-      id: 'c',
-      name: '小林豆漿',
-      area: '中山區',
-      address: '住宅街口示範點 C（非真實地址）',
-      x: 54,
-      y: 73,
-      binDistance: 150,
-      publicCapacity: 20,
-      collections: 1,
-      overflow: 0,
-    },
-  ].map((s) => ({
-    ...s,
-    hoursStart: '00:00',
-    hoursEnd: '23:59',
-    weeklyHours: defaultWeeklyHours('00:00', '23:59'),
-    pausedOn: null,
-    pauseReason: '',
-    enabled: true,
-  }))
-  const locations: [string, string, number, number][] = [
-    ['中正區', '公園口', 25.034, 121.518],
-    ['中正區', '書街', 25.043, 121.515],
-    ['大同區', '老街', 25.058, 121.51],
-    ['大同區', '河岸', 25.074, 121.512],
-    ['中山區', '樹蔭', 25.064, 121.525],
-    ['中山區', '晴光', 25.066, 121.53],
-    ['松山區', '綠巷', 25.051, 121.559],
-    ['松山區', '車站邊', 25.05, 121.577],
-    ['大安區', '學院', 25.026, 121.543],
-    ['大安區', '花園', 25.033, 121.535],
-    ['萬華區', '街角', 25.035, 121.499],
-    ['萬華區', '南園', 25.024, 121.497],
-    ['信義區', '山腳', 25.028, 121.568],
-    ['信義區', '廣場', 25.038, 121.566],
-    ['士林區', '文林', 25.09, 121.525],
-    ['士林區', '溪畔', 25.105, 121.529],
-    ['北投區', '溫泉', 25.133, 121.502],
-    ['內湖區', '湖畔', 25.083, 121.578],
-    ['內湖區', '科園', 25.078, 121.565],
-    ['南港區', '東站', 25.053, 121.607],
-    ['文山區', '茶香', 24.993, 121.569],
-  ]
-  locations.forEach(([area, label, lat, lng], index) => {
-    const allDayDemo = index % 4 !== 3
+  const stores: Store[] = demoStores.map((store, position) => {
+    const index = position - 3
+    const allDayDemo = position < 3 || index >= 21 || index % 4 !== 3
     const hoursStart = allDayDemo
       ? '00:00'
       : index % 3 === 0
@@ -219,13 +144,8 @@ export function seedState(): State {
     const hoursEnd = allDayDemo ? '23:59' : index % 3 === 2 ? '23:00' : '20:00'
     const weeklyHours = defaultWeeklyHours(hoursStart, hoursEnd)
     if (!allDayDemo) weeklyHours[index % 7]!.closed = true
-    stores.push({
-      id: `demo-${String(index + 1).padStart(2, '0')}`,
-      name: `${label}夥伴小店（示範）`,
-      area,
-      address: `臺北市${area}${label}示範據點（虛構地址，非實際收受店家）`,
-      lat,
-      lng,
+    return {
+      ...store,
       isDemo: true,
       hoursStart,
       hoursEnd,
@@ -235,11 +155,10 @@ export function seedState(): State {
       enabled: index !== 15,
       x: 50,
       y: 50,
-      binDistance: null,
-      publicCapacity: null,
-      collections: null,
-      overflow: null,
-    })
+      publicCapacity: position < 3 ? [20, 10, 20][position]! : null,
+      collections: position < 3 ? 1 : null,
+      overflow: position === 0 ? 3 : position < 3 ? 0 : null,
+    }
   })
   const samples: [string, number][] = [
     ['a', 1.3],
@@ -274,7 +193,7 @@ export function seedState(): State {
     [`${date}:b`]: 5.4,
     [`${date}:c`]: 10,
   }
-  for (const [index, store] of stores.slice(3).entries()) {
+  for (const [index, store] of stores.slice(3, 24).entries()) {
     for (let day = 0; day < 3; day += 1) {
       const recordDate = dateKey(
         new Date(Date.parse(`${date}T12:00:00+08:00`) - day * 86_400_000),
@@ -316,20 +235,29 @@ export function seedState(): State {
         const measurement: SizeMeasurement = {
           boardVersion: 'street-v1',
           size,
-          quantity: 1 + ((index + n) % 3),
+          quantity:
+            index < 24
+              ? 1 + ((index + n) % 3)
+              : 1 +
+                ((index * 7 + n * 3) % 7) *
+                  ([0, 6].includes(
+                    new Date(`${recordDate}T12:00:00+08:00`).getUTCDay(),
+                  )
+                    ? 1 + (index % 3)
+                    : 1 + ((index + 1) % 2)),
         }
         counts[size] += measurement.quantity
         deliveries.push({
           id: `sample-size-${recordDate}-${store.id}-${n}`,
           storeId: store.id,
           date: recordDate,
-          createdAt: `${recordDate}T${String(10 + n).padStart(2, '0')}:30:00+08:00`,
+          createdAt: `${recordDate}T${String(index < 24 ? 10 + n : 8 + (index % 6) + n * 3).padStart(2, '0')}:30:00+08:00`,
           kind: n % 2 ? '食物包裝' : '飲料杯／容器',
           liters: 0,
           low: 0,
           high: 0,
-          photo: sampleWaste,
-          source: 'photo',
+          photo: index < 24 || (day === 0 && n === 0) ? sampleWaste : null,
+          source: index < 24 || (day === 0 && n === 0) ? 'photo' : 'manual',
           status: 'accepted',
           reason: '',
           measurement,
@@ -685,7 +613,7 @@ export function registerStore(state: State, input: RegistrationInput): Store {
   }
 }
 
-export function migrateState(raw: unknown): State {
+export function migrateState(raw: unknown, expandDemo = true): State {
   const fail = () => {
     throw new Error('資料格式無法辨識')
   }
@@ -706,6 +634,29 @@ export function migrateState(raw: unknown): State {
     return fail()
   const seed = seedState()
   const demos = seed.stores
+  const oldDemoLabels = [
+    '公園口',
+    '書街',
+    '老街',
+    '河岸',
+    '樹蔭',
+    '晴光',
+    '綠巷',
+    '車站邊',
+    '學院',
+    '花園',
+    '街角',
+    '南園',
+    '山腳',
+    '廣場',
+    '文林',
+    '溪畔',
+    '溫泉',
+    '湖畔',
+    '科園',
+    '東站',
+    '茶香',
+  ]
   const ids = new Set<string>()
   const stores = state.stores.map((s) => {
     if (
@@ -736,6 +687,15 @@ export function migrateState(raw: unknown): State {
     const demo = demos.find(
       (d) => d.id === s.id && d.name === s.name && d.address === s.address,
     )
+    const seedStore = demos.find((d) => d.id === s.id)
+    const oldDemoIndex = Number(s.id.replace('demo-', '')) - 1
+    const renameDemo =
+      expandDemo &&
+      s.isDemo &&
+      seedStore &&
+      s.name === `${oldDemoLabels[oldDemoIndex]}夥伴小店（示範）` &&
+      s.lat === seedStore.lat &&
+      s.lng === seedStore.lng
     const coordinates = hasCoordinates(s)
       ? { lat: s.lat, lng: s.lng }
       : demo
@@ -745,6 +705,7 @@ export function migrateState(raw: unknown): State {
     return {
       ...s,
       ...coordinates,
+      name: renameDemo ? seedStore.name : s.name,
       area: demo && state.version < 3 ? demo.area : s.area,
       weeklyHours:
         state.version >= 3
@@ -803,7 +764,7 @@ export function migrateState(raw: unknown): State {
     Object.values(state.sizeClaims).forEach(validateSizeCounts)
   }
   const expand =
-    state.version < 3 &&
+    expandDemo &&
     ['a', 'b', 'c'].every((id) => stores.some((s) => s.id === id && s.isDemo))
   const missing = expand ? demos.filter((s) => !ids.has(s.id)) : []
   const missingIds = new Set(missing.map((s) => s.id))
@@ -818,10 +779,14 @@ export function migrateState(raw: unknown): State {
   for (const [key, value] of Object.entries(seed.claims))
     if (missingIds.has(key.slice(11)) && !Object.hasOwn(claims, key))
       claims[key] = value
+  const sizeClaims = state.version === 4 ? { ...state.sizeClaims } : {}
+  for (const [key, value] of Object.entries(seed.sizeClaims))
+    if (missingIds.has(key.slice(11)) && !Object.hasOwn(sizeClaims, key))
+      sizeClaims[key] = { ...value }
   return {
     ...state,
     version: 4,
-    sizeClaims: state.version === 4 ? { ...state.sizeClaims } : {},
+    sizeClaims,
     stores: [...stores, ...missing],
     deliveries,
     claims,

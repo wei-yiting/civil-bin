@@ -7,13 +7,13 @@ test.beforeEach(async ({ context, page }) => {
   await page.clock.install({ time: saturday })
 })
 
-test('24 家示範店與每週休息日跨角色保存', async ({ page }) => {
+test('270 家示範店與每週休息日跨角色保存', async ({ page }) => {
   await page.goto('/#merchant')
   await expect(
     page
       .getByRole('combobox', { name: '選擇合作店家', exact: true })
       .getByRole('option'),
-  ).toHaveCount(24)
+  ).toHaveCount(270)
   await page.getByRole('checkbox', { name: '週六收受', exact: true }).uncheck()
   await page.getByRole('button', { name: '儲存收受設定', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('收受設定已儲存')

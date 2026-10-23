@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { demoSessionStorageKey } from './demo-session'
 import { migrateState } from './domain'
 import type { State } from './domain'
 import { cloudChanges } from './cloud-diff'
@@ -20,7 +21,15 @@ let configurationError = ''
 export const cloudClient = (() => {
   if (!url || !key) return null
   try {
-    return createClient(url, key)
+    const storageKey = demoSessionStorageKey(
+      typeof window === 'undefined' ? '' : window.location.search,
+      url,
+    )
+    return createClient(
+      url,
+      key,
+      storageKey ? { auth: { storageKey } } : undefined,
+    )
   } catch {
     configurationError = 'Supabase URL 或 publishable key 格式不正確。'
     return null
@@ -69,7 +78,7 @@ export async function cloudLoad(): Promise<{
     role: CloudRole
     storeIds: string[]
   }
-  const state = migrateState(payload.state)
+  const state = migrateState(payload.state, false)
   await Promise.all(
     state.deliveries.map(async (delivery) => {
       if (!delivery.photo?.startsWith('storage:')) return

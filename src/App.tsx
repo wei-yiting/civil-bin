@@ -132,6 +132,11 @@ export default function App() {
         </div>
         <main>
           <CloudPanel />
+          {cloud.ready && data.stores.some((store) => store.isDemo) && (
+            <p className="mini-note">
+              原型展示：包含虛構合作店家與預載紀錄，非真實服務名錄；公共清潔箱位置為官方開放資料。
+            </p>
+          )}
           {cloud.configured && !cloud.ready && (
             <p role="status">等待雲端資料，請檢查連線或 Supabase 設定。</p>
           )}

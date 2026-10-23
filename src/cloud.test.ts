@@ -111,3 +111,20 @@ describe('Supabase transport', () => {
     expect(createSignedUrl).toHaveBeenCalledWith('citizen-id/photo-id', 3600)
   })
 })
+
+it('雲端快照不補入本機示範店，也不在客戶端改名', async () => {
+  const { cloudLoad } = await import('./cloud')
+  const state = seedState()
+  state.stores = state.stores.slice(0, 4)
+  state.stores[3]!.name = '公園口夥伴小店（示範）'
+  state.deliveries = state.deliveries.filter((r) =>
+    state.stores.some((s) => s.id === r.storeId),
+  )
+  sb.rpc.mockResolvedValue({
+    data: { state, role: 'citizen', storeIds: [] },
+    error: null,
+  })
+  const result = await cloudLoad()
+  expect(result.state.stores).toHaveLength(4)
+  expect(result.state.stores[3]!.name).toBe('公園口夥伴小店（示範）')
+})
