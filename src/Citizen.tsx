@@ -284,7 +284,7 @@ export function Citizen({ data, notify }: PageProps) {
         </div>
         <div className="map-legend">
           <span className="legend-partner">● 合作店家</span>
-          <span className="legend-bin">● 官方清潔箱</span>
+          <span className="legend-bin">◆ 官方清潔箱</span>
         </div>
       </section>
       <div className="location-caption">

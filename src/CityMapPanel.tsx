@@ -1,32 +1,25 @@
 import { useMemo, useState } from 'react'
+import { weightedSizeCount } from './measurement'
 import { aggregateSizes, TAIPEI_DISTRICTS } from './domain'
 import type { State } from './domain'
 import { GeoMap } from './GeoMap'
 import { BinSource } from './BinSource'
 import { usePublicBins } from './usePublicBins'
-import {
-  hasCoordinates,
-  haversineMeters,
-  nearestBin,
-  formatDistance,
-} from './geo'
 
 export function CityMapPanel({
   data,
   day,
-  selected,
   onSelect,
 }: {
   data: State
   day: string
-  selected: string
   onSelect: (id: string) => void
 }) {
   const resource = usePublicBins()
   const [district, setDistrict] = useState('')
   const [showBins, setShowBins] = useState(true)
   const [showStores, setShowStores] = useState(true)
-  const [mode, setMode] = useState('confirmed')
+  const [mode, setMode] = useState('weighted')
   const [fitToken, setFitToken] = useState(0)
   const bins = useMemo(
     () => resource.bins.filter((bin) => !district || bin.district === district),
@@ -45,16 +38,18 @@ export function CityMapPanel({
             mode === 'claims'
               ? data.sizeClaims[`${day}:${store.id}`]
               : evidence.confirmed
-          return [store.id, counts ? counts.S + counts.M + counts.L : NaN]
+          return [
+            store.id,
+            counts
+              ? mode === 'weighted'
+                ? weightedSizeCount(counts)
+                : counts.S + counts.M + counts.L
+              : NaN,
+          ]
         }),
       ),
     [stores, data, day, mode],
   )
-  const store = data.stores.find((s) => s.id === selected)!
-  const nearest = nearestBin(store, resource.bins)
-  const around = hasCoordinates(store)
-    ? resource.bins.filter((bin) => haversineMeters(store, bin) <= 500).length
-    : 0
   return (
     <section className="card city-map-panel">
       <div className="card-head">
@@ -89,6 +84,7 @@ export function CityMapPanel({
         <label>
           地圖顯示數值
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="weighted">已確認加權件數（小1／中2／大4）</option>
             <option value="confirmed">店家已確認件數</option>
             <option value="claims">店家當日申報件數</option>
           </select>
@@ -116,17 +112,21 @@ export function CityMapPanel({
           overview
           stores={showStores ? stores : undefined}
           bins={showBins ? bins : undefined}
-          selected={selected}
           onSelect={onSelect}
           volumes={volumes}
-          valueUnit="件"
+          valueUnit={mode === 'weighted' ? '加權件' : '件'}
           fitToken={fitToken}
         />
         <div className="city-map-legend">
           <span>
-            ● 合作店家・{mode === 'confirmed' ? '已確認件數' : '店家申報件數'}
+            ● 合作店家・
+            {mode === 'weighted'
+              ? '已確認加權件數'
+              : mode === 'confirmed'
+                ? '已確認件數'
+                : '店家申報件數'}
           </span>
-          <span>● 官方公共清潔箱</span>
+          <span>◆ 官方公共清潔箱</span>
           <span>— 表示當日無該項資料</span>
         </div>
       </div>
@@ -137,15 +137,8 @@ export function CityMapPanel({
             {bins.length} 個官方位置・{stores.length} 個合作點
           </b>
         </div>
-        <div>
-          <small>{store.name} 周邊</small>
-          <b>
-            最近清潔箱 {nearest ? formatDistance(nearest.distance) : '未知'}
-            ・500 公尺內 {hasCoordinates(store) ? around : '未知'} 個位置
-          </b>
-        </div>
         <p>
-          位置資料不等於即時桶況或容量；地標資料可能涵蓋多個清潔箱。合作點顯示尺寸板登記件數／店家自行申報；不同尺寸不換算公升，資料供觀察，不代表增設或清運結論。
+          加權件數＝小件×1＋中件×2＋大件×4，按尺寸框面積比例比較，不是公升或重量。位置資料不等於即時桶況或容量；地標資料可能涵蓋多個清潔箱。合作點顯示尺寸板登記件數／店家自行申報；不同尺寸不換算公升，資料供觀察，不代表增設或清運結論。
         </p>
       </div>
       <BinSource resource={resource} />

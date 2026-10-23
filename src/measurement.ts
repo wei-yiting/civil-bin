@@ -58,3 +58,7 @@ export function measurementLabel(
   const size = SIZE_OPTIONS.find((option) => option.id === measurement.size)!
   return `${size.label} × ${measurement.quantity} 件（${size.widthCm} × ${size.heightCm} 公分內）`
 }
+
+export function weightedSizeCount(counts: SizeCounts): number {
+  return counts.S + counts.M * 2 + counts.L * 4
+}

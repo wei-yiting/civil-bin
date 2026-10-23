@@ -21,7 +21,7 @@ interface GeoMapProps {
   picked?: Coordinates | null
   onPick?: (point: Coordinates) => void
   volumes?: Record<string, number>
-  valueUnit?: 'L' | '件'
+  valueUnit?: 'L' | '件' | '加權件'
   overview?: boolean
   fitToken?: number
   onCenterChange?: (center: Coordinates) => void
@@ -72,6 +72,7 @@ export function GeoMap({
       minZoom: 8,
       maxZoom: 19,
       zoomControl: false,
+      zoomAnimation: false,
       preferCanvas: false,
       scrollWheelZoom: true,
     })
@@ -147,7 +148,7 @@ export function GeoMap({
             .filter((v): v is number => Number.isFinite(v))
           const total = known.reduce((n, v) => n + v, 0)
           const value = known.length
-            ? (valueUnit === '件' ? String(total) : total.toFixed(1)) +
+            ? (valueUnit !== 'L' ? String(total) : total.toFixed(1)) +
               ` ${valueUnit}` +
               (known.length < cluster.length ? '＋?' : '')
             : '—'
@@ -186,7 +187,7 @@ export function GeoMap({
         const value = volumes?.[store.id]
         const icon = L.divIcon({
           className: `real-store-pin ${selected === store.id ? 'is-selected' : ''} ${isOpen(store) ? '' : 'is-closed'}`,
-          html: `<span>${volumes ? (Number.isFinite(value) ? (valueUnit === '件' ? String(value) : value!.toFixed(1)) + `<small>${valueUnit}</small>` : '—') : '▤'}</span>`,
+          html: `<span>${volumes ? (Number.isFinite(value) ? (valueUnit !== 'L' ? String(value) : value!.toFixed(1)) + `<small>${valueUnit}</small>` : '—') : '▤'}</span>`,
           iconSize: [44, 44],
           iconAnchor: [22, 44],
         })
@@ -210,13 +211,18 @@ export function GeoMap({
     }
     drawStores()
     map.on('zoomend', drawStores)
+    const binIcon = L.divIcon({
+      className: 'public-bin-pin',
+      html: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1 23 12 12 23 1 12Z" fill="#913baf" stroke="#fff" stroke-width="2"/><path d="M8 9h8m-6-2h4m-5 3 1 7h4l1-7m-3 1v4" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>',
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    })
     for (const bin of bins) {
-      const marker = L.circleMarker([bin.lat, bin.lng], {
-        radius: 5,
-        color: '#fff',
-        weight: 1.5,
-        fillColor: '#558bb7',
-        fillOpacity: 0.9,
+      const marker = L.marker([bin.lat, bin.lng], {
+        icon: binIcon,
+        zIndexOffset: -1000,
+        title: `公共清潔箱｜${bin.address}`,
+        keyboard: true,
         bubblingMouseEvents: false,
       })
         .addTo(group)
@@ -225,6 +231,10 @@ export function GeoMap({
             `公共清潔箱｜${bin.address}${bin.note ? '・' + bin.note : ''}`,
           ),
         )
+      marker
+        .getElement()
+        ?.setAttribute('aria-label', `公共清潔箱：${bin.address}`)
+      marker.getElement()?.setAttribute('role', 'button')
       marker.on('click', () => {
         callbacks.current.onBinSelect?.(bin)
         const popup = document.createElement('div')

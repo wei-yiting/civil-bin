@@ -1,8 +1,9 @@
+import { weightedSizeCount } from './measurement'
 import { CityMapPanel } from './CityMapPanel'
 import { CityTimePanel } from './CityTimePanel'
 import { dayLabel, shiftDay } from './city-history'
 import { save } from './actions'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { aggregateSizes, dateKey, reviewKey, measurementLabel } from './domain'
 import type { Store, SizeCounts } from './domain'
 import { Metric, StoreStatus } from './ui'
@@ -109,9 +110,12 @@ function Review({
 
 export function City({ data, notify }: PageProps) {
   const [day, setDay] = useState(dateKey())
-  const [selected, setSelected] = useState(data.stores[0].id)
+  const [selected, setSelected] = useState<string | null>(null)
   const [onlyFlags, setOnlyFlags] = useState(false)
-  const store = data.stores.find((s) => s.id === selected)!
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [selected])
+  const store = data.stores.find((s) => s.id === selected)
   const summaries = data.stores.map((s) => {
     const evidence = aggregateSizes(data, s.id, day)
     const claim = data.sizeClaims[`${day}:${s.id}`]
@@ -127,10 +131,18 @@ export function City({ data, notify }: PageProps) {
     <>
       <header className="page-header">
         <div>
-          <div className="eyebrow">讓城市評估，有資料可循</div>
-          <h1>公共垃圾需求與收受分析</h1>
+          {store ? (
+            <button className="text-button" onClick={() => setSelected(null)}>
+              ← 返回全市總覽
+            </button>
+          ) : (
+            <div className="eyebrow">市府工作台・全市總覽</div>
+          )}
+          <h1>{store ? store.name : '公共垃圾需求與收受分析'}</h1>
           <p>
-            依尺寸板分類觀察各點件數與申報差異，供政府評估；不是體積推算或政策結論。
+            {store
+              ? `${store.area}・${store.address}｜單一據點分析`
+              : '先查看全市收受概況，再由地圖或清單進入單一據點。'}
           </p>
         </div>
         <div className="city-date-navigation">
@@ -174,121 +186,175 @@ export function City({ data, notify }: PageProps) {
           </small>
         </div>
       </header>
-      <CityMapPanel
-        data={data}
-        day={day}
-        selected={selected}
-        onSelect={setSelected}
-      />
-      <CityTimePanel
-        data={data}
-        store={store}
-        day={day}
-        onSelect={setSelected}
-      />
-      <div className="metrics four">
-        <Metric label="合作據點" value={data.stores.length} unit="間小店" />
-        <Metric
-          label="店家已確認"
-          value={summaries.reduce(
-            (n, s) => n + totalCounts(s.evidence.confirmed),
-            0,
-          )}
-          unit="件・尺寸板登記"
-        />
-        <Metric
-          label="店家當日申報"
-          value={summaries.reduce(
-            (n, s) => n + (s.claim ? totalCounts(s.claim) : 0),
-            0,
-          )}
-          unit="件・未申報不計入"
-        />
-        <Metric
-          label="待核對差異"
-          value={flags.length}
-          unit="個據點・非違規判定"
-          accent
-        />
-      </div>
-      <section className="card comparison">
-        <div className="card-head">
-          <div>
-            <span className="eyebrow">01 / 雙方尺寸件數比對</span>
-            <h2>同一天、同一個據點，一起看</h2>
-          </div>
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={onlyFlags}
-              onChange={(e) => setOnlyFlags(e.target.checked)}
+      {!store ? (
+        <section aria-label="全市總覽" className="city-overview">
+          <div className="metrics four">
+            <Metric
+              label="全市合作據點"
+              value={data.stores.length}
+              unit="間小店"
             />
-            只看待查核
-          </label>
-        </div>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>合作收受點</th>
-                <th>民眾原登記</th>
-                <th>店家已確認</th>
-                <th>店家當日申報</th>
-                <th>比對結果</th>
-                <th>查核作業</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summaries
-                .filter((s) => !onlyFlags || s.difference)
-                .map(({ store: s, evidence, claim, difference }) => (
-                  <tr key={s.id}>
-                    <td>
-                      <b>{s.name}</b>
-                      <small>{s.area}</small>
-                      {day === dateKey() && <StoreStatus store={s} />}
-                    </td>
-                    <td>
-                      {countsLabel(evidence.reported)}
-                      <small>已收受交付的原始填寫</small>
-                    </td>
-                    <td>{countsLabel(evidence.confirmed)}</td>
-                    <td>{claim ? countsLabel(claim) : '尚未申報'}</td>
-                    <td>
-                      <span
-                        className={`badge ${difference ? 'orange' : claim ? 'green' : 'gray'}`}
-                      >
-                        {difference ? '待核對' : claim ? '件數一致' : '待申報'}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        className="text-button"
-                        onClick={() => setSelected(s.id)}
-                      >
-                        查核詳情
-                      </button>
-                    </td>
+            <Metric
+              label="全市已確認加權收受"
+              value={summaries.reduce(
+                (n, s) => n + weightedSizeCount(s.evidence.confirmed),
+                0,
+              )}
+              unit={`加權件・原始 ${summaries.reduce((n, s) => n + totalCounts(s.evidence.confirmed), 0)} 件`}
+            />
+            <Metric
+              label="全市申報加權收受"
+              value={summaries.reduce(
+                (n, s) => n + (s.claim ? weightedSizeCount(s.claim) : 0),
+                0,
+              )}
+              unit={`加權件・原始 ${summaries.reduce((n, s) => n + (s.claim ? totalCounts(s.claim) : 0), 0)} 件（未申報不計入）`}
+            />
+            <Metric
+              label="待核對據點"
+              value={flags.length}
+              unit="個據點・非違規判定"
+              accent
+            />
+          </div>
+          <CityMapPanel data={data} day={day} onSelect={setSelected} />
+          <section className="card comparison">
+            <div className="card-head">
+              <div>
+                <span className="eyebrow">01 / 雙方尺寸件數比對</span>
+                <h2>各合作據點・所選日期收受比較</h2>
+              </div>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={onlyFlags}
+                  onChange={(e) => setOnlyFlags(e.target.checked)}
+                />
+                只看待查核
+              </label>
+            </div>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>合作收受點</th>
+                    <th>民眾原登記</th>
+                    <th>已確認加權件數</th>
+                    <th>店家已確認</th>
+                    <th>店家當日申報</th>
+                    <th>比對結果</th>
+                    <th>查核作業</th>
                   </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-        {onlyFlags && !flags.length && (
-          <p className="empty">目前沒有待核對差異。</p>
-        )}
-        <div className="mini-note padded">
-          小件 10 × 15 公分、中件 15 × 20 公分、大件 20 × 30
-          公分。尺寸表示對照板外框分類，不是公升；每日申報與逐筆確認任一分類不符時提醒核對。
-        </div>
-      </section>
-      <Review
-        key={reviewKey(data, selected, day)}
-        data={data}
-        store={store}
-        day={day}
-        notify={notify}
-      />
+                </thead>
+                <tbody>
+                  {summaries
+                    .filter((s) => !onlyFlags || s.difference)
+                    .sort(
+                      (a, b) =>
+                        weightedSizeCount(b.evidence.confirmed) -
+                        weightedSizeCount(a.evidence.confirmed),
+                    )
+                    .map(({ store: s, evidence, claim, difference }) => (
+                      <tr key={s.id}>
+                        <td>
+                          <b>{s.name}</b>
+                          <small>{s.area}</small>
+                          {day === dateKey() && <StoreStatus store={s} />}
+                        </td>
+                        <td>
+                          {countsLabel(evidence.reported)}
+                          <small>已收受交付的原始填寫</small>
+                        </td>
+                        <td>
+                          <b>{weightedSizeCount(evidence.confirmed)} 加權件</b>
+                        </td>
+                        <td>{countsLabel(evidence.confirmed)}</td>
+                        <td>{claim ? countsLabel(claim) : '尚未申報'}</td>
+                        <td>
+                          <span
+                            className={`badge ${difference ? 'orange' : claim ? 'green' : 'gray'}`}
+                          >
+                            {difference
+                              ? '待核對'
+                              : claim
+                                ? '件數一致'
+                                : '待申報'}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            className="text-button"
+                            onClick={() => setSelected(s.id)}
+                          >
+                            查核詳情
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            {onlyFlags && !flags.length && (
+              <p className="empty">目前沒有待核對差異。</p>
+            )}
+            <div className="mini-note padded">
+              加權以小件×1、中件×2、大件×4比較，並依加權件數由高至低排序。小件
+              10 × 15 公分、中件 15 × 20 公分、大件 20 × 30
+              公分。尺寸表示對照板外框分類，不是公升；每日申報與逐筆確認任一分類不符時提醒核對。
+            </div>
+          </section>
+        </section>
+      ) : (
+        <section aria-label="單店詳情" className="city-store-detail">
+          <div className="metrics four">
+            <Metric
+              label="本店加權收受"
+              value={weightedSizeCount(
+                aggregateSizes(data, store.id, day).confirmed,
+              )}
+              unit="加權件・小1／中2／大4"
+            />
+            <Metric
+              label="本店已確認收受"
+              value={totalCounts(aggregateSizes(data, store.id, day).confirmed)}
+              unit="件・所選日期"
+            />
+            <Metric
+              label="本店當日申報"
+              value={
+                data.sizeClaims[`${day}:${store.id}`]
+                  ? totalCounts(data.sizeClaims[`${day}:${store.id}`])
+                  : '—'
+              }
+              unit="件・未申報不視為零"
+            />
+            <Metric
+              label="本店比對結果"
+              value={
+                summaries.find((s) => s.store.id === store.id)!.difference
+                  ? '待核對'
+                  : data.sizeClaims[`${day}:${store.id}`]
+                    ? '件數一致'
+                    : '待申報'
+              }
+              unit="供人工核對"
+            />
+          </div>
+          <CityTimePanel
+            data={data}
+            store={store}
+            day={day}
+            onSelect={setSelected}
+          />
+          <Review
+            key={reviewKey(data, store.id, day)}
+            data={data}
+            store={store}
+            day={day}
+            notify={notify}
+          />
+        </section>
+      )}
     </>
   )
 }

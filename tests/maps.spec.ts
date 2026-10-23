@@ -4,9 +4,15 @@ import { test, expect } from '@playwright/test'
 test('Leaflet 地圖跨角色重新建立時沒有繪圖錯誤', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error' && message.text().includes('_leaflet_pos'))
+      errors.push(message.text())
+  })
   await page.goto('/')
   await expect(page.getByTestId('geo-map')).toBeVisible()
   for (const role of ['市府端', '店家端', '民眾端']) {
+    if (await page.getByTestId('geo-map').count())
+      await page.getByRole('button', { name: '放大地圖', exact: true }).click()
     await page.getByRole('button', { name: role, exact: true }).click()
     await page.evaluate(
       () =>
@@ -16,6 +22,7 @@ test('Leaflet 地圖跨角色重新建立時沒有繪圖錯誤', async ({ page }
     )
   }
   await expect(page.getByRole('button', { name: '定位我的位置' })).toBeVisible()
+  await page.clock.fastForward(500)
   expect(errors).toEqual([])
 })
 
@@ -112,57 +119,61 @@ test('店家登錄後跨角色與重載仍可找到', async ({ page }) => {
   ).toContainText('尚未申報')
 })
 
-test('市府全區地圖可切換申報量與行政區圖層', async ({ page }) => {
+test('市府總覽切換圖層並進入獨立單店詳情', async ({ page }) => {
   await page.goto('/#city')
+  const overview = page.getByRole('region', { name: '全市總覽', exact: true })
+  const details = page.getByRole('region', { name: '單店詳情', exact: true })
+  await expect(overview).toBeVisible()
+  await expect(details).toHaveCount(0)
   await expect(page.getByTestId('bin-source')).toContainText('773')
-  await page
-    .getByRole('combobox', { name: '地圖顯示數值', exact: true })
-    .selectOption('claims')
-  await expect(page.getByText(/773 個官方位置・24 個合作點/)).toBeVisible()
-  await page
-    .getByRole('combobox', { name: '地圖行政區', exact: true })
-    .selectOption('松山區')
-  await page.getByRole('button', { name: '查看全區', exact: true }).click()
-  await page.getByTestId('geo-map').focus()
-  await page.getByTestId('geo-map').press('+')
-  await page
-    .getByRole('combobox', { name: '地圖行政區', exact: true })
-    .selectOption('')
-  await page
-    .getByRole('row')
-    .filter({ hasText: '惠姐雜貨店' })
-    .getByRole('button', { name: '查核詳情' })
-    .click()
-  await page
-    .getByRole('row')
-    .filter({ hasText: '阿明早餐店' })
-    .getByRole('button', { name: '查核詳情' })
-    .click()
+  await expect(page.getByLabel('地圖顯示數值')).toHaveValue('weighted')
+  await page.getByLabel('地圖顯示數值').selectOption('claims')
+  await page.getByLabel('地圖行政區').selectOption('中山區')
+  while (
+    Number(await page.getByTestId('geo-map').getAttribute('data-zoom')) < 14
+  ) {
+    const zoom = Number(
+      await page.getByTestId('geo-map').getAttribute('data-zoom'),
+    )
+    await page.getByRole('button', { name: '放大地圖', exact: true }).click()
+    await expect(page.getByTestId('geo-map')).toHaveAttribute(
+      'data-zoom',
+      String(zoom + 1),
+    )
+  }
+  await page.getByLabel('地圖顯示數值').selectOption('weighted')
   await expect(
     page.getByRole('button', { name: '地圖：阿明早餐店', exact: true }),
-  ).toHaveText('—')
+  ).toContainText('17')
   await page
-    .getByRole('combobox', { name: '地圖顯示數值', exact: true })
-    .selectOption('confirmed')
+    .getByRole('button', { name: '地圖：阿明早餐店', exact: true })
+    .click()
+  await expect(details).toBeVisible()
+  await expect(overview).toHaveCount(0)
+  await expect(page.getByText('全市合作據點', { exact: true })).toHaveCount(0)
+  await expect(details).toContainText('本店加權收受')
+  await expect(details).toContainText('17')
   await expect(
-    page.getByRole('button', { name: '地圖：阿明早餐店', exact: true }),
-  ).toContainText('件')
+    page.getByRole('heading', { name: '阿明早餐店・查核詳情', exact: true }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '前一天', exact: true }).click()
+  await expect(details).toContainText('2026-10-23・星期五・平日')
   await page
-    .getByRole('row')
-    .filter({ hasText: '惠姐雜貨店' })
-    .getByRole('button', { name: '查核詳情' })
+    .getByText('展開逐筆交付時間與尺寸（3 筆）', { exact: true })
     .click()
   await expect(
-    page.getByRole('heading', { name: '惠姐雜貨店・查核詳情', exact: true }),
+    details.getByRole('cell', { name: '10:30', exact: true }),
   ).toBeVisible()
   await page
-    .getByRole('combobox', { name: '地圖行政區', exact: true })
-    .selectOption('松山區')
-  await expect(
-    page.getByRole('combobox', { name: '地圖行政區', exact: true }),
-  ).toHaveValue('松山區')
+    .getByRole('button', { name: '← 返回全市總覽', exact: true })
+    .click()
+  await expect(overview).toBeVisible()
+  await expect(page.getByLabel('分析日期')).toHaveValue('2026-10-23')
+  await expect(details).toHaveCount(0)
   await page.getByLabel('市府顯示公共垃圾桶').uncheck()
-  await page.getByRole('button', { name: '查看全區', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^公共清潔箱：/ })).toHaveCount(
+    0,
+  )
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

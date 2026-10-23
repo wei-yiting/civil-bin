@@ -1,3 +1,4 @@
+import { weightedSizeCount } from './measurement'
 import { describe, expect, it } from 'vitest'
 import {
   aggregate,
@@ -169,4 +170,11 @@ it('所有預載樣本不會冒充民眾自己的交付紀錄', () => {
     false,
   )
   expect(isDemoDelivery({ id: 'legacy-personal-record' })).toBe(false)
+})
+
+it('以尺寸框面積比例加權，區分同件數的大小垃圾並保留零量', () => {
+  expect(weightedSizeCount({ S: 1, M: 2, L: 3 })).toBe(17)
+  expect(weightedSizeCount({ S: 6, M: 0, L: 0 })).toBe(6)
+  expect(weightedSizeCount({ S: 0, M: 0, L: 6 })).toBe(24)
+  expect(weightedSizeCount({ S: 0, M: 0, L: 0 })).toBe(0)
 })

@@ -60,6 +60,7 @@ test('尺寸交付、店家現場修正、每日申報與市府跨分頁同步',
     .fill('尺寸原填與現場確認不同，保留雙方紀錄。')
   await page.getByRole('button', { name: '儲存查核紀錄' }).click()
   await page.reload()
+  await row.getByRole('button', { name: '查核詳情' }).click()
   await expect(
     page
       .getByRole('paragraph')
@@ -80,6 +81,9 @@ test('尺寸交付、店家現場修正、每日申報與市府跨分頁同步',
     .getByRole('button', { name: '完成今日結算並停收', exact: true })
     .click()
   await expect(merchant.getByRole('status')).toContainText('今日已結算並停收')
+  await page
+    .getByRole('button', { name: '← 返回全市總覽', exact: true })
+    .click()
   await expect(row).toContainText('今日已停收')
   await expect(row).toContainText('件數一致')
   await expect(
