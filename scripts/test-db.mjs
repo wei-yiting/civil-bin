@@ -32,7 +32,7 @@ try {
   for (let attempt = 0; attempt < 100; attempt++) {
     const result = spawnSync(
       'docker',
-      ['exec', container, 'pg_isready', '-U', 'postgres'],
+      ['exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'],
       { encoding: 'utf8', timeout: 5000 },
     )
     if (result.status === 0) {
@@ -54,6 +54,8 @@ try {
         '-i',
         container,
         'psql',
+        '-h',
+        '127.0.0.1',
         '-U',
         'postgres',
         '-v',
