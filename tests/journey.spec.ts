@@ -1,8 +1,11 @@
+import { mockMapNetwork } from './mockMapNetwork'
 import { test, expect } from '@playwright/test'
+
+test.beforeEach(async ({ context }) => mockMapNetwork(context))
 
 const demoTime = new Date('2026-10-23T10:00:00+08:00')
 test.beforeEach(async ({ page }) => {
-  await page.clock.setFixedTime(demoTime)
+  await page.clock.install({ time: demoTime })
 })
 
 test('照片交付、跨分頁收受、申報與市府查核同步', async ({ page, context }) => {
@@ -12,6 +15,7 @@ test('照片交付、跨分頁收受、申報與市府查核同步', async ({ pa
   await expect(
     page.getByRole('heading', { name: '附近哪裡可以丟垃圾？' }),
   ).toBeVisible()
+  await page.getByRole('button', { name: '拍照交付', exact: true }).click()
   await page.getByRole('button', { name: '載入示範照片' }).click()
   await page
     .getByRole('button', { name: '模擬 AI 體積估算', exact: true })
@@ -20,7 +24,7 @@ test('照片交付、跨分頁收受、申報與市府查核同步', async ({ pa
   await page.getByRole('button', { name: '送出交付紀錄' }).click()
   await expect(page.getByRole('status')).toContainText('已送出')
   const merchant = await context.newPage()
-  await merchant.clock.setFixedTime(demoTime)
+  await merchant.clock.install({ time: demoTime })
   await merchant.goto('/#merchant')
   await merchant.getByRole('button', { name: '確認收受', exact: true }).click()
   await expect(page.getByTestId('citizen-history')).toContainText('已收受')
@@ -49,6 +53,7 @@ test('照片交付、跨分頁收受、申報與市府查核同步', async ({ pa
 
 test('拒收不計入佐證，暫停收受同步至地圖', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('button', { name: '拍照交付', exact: true }).click()
   await page.getByRole('button', { name: '載入示範照片' }).click()
   await page
     .getByRole('button', { name: '模擬 AI 體積估算', exact: true })
@@ -65,6 +70,7 @@ test('拒收不計入佐證，暫停收受同步至地圖', async ({ page }) => 
   await page.getByRole('button', { name: '儲存收受設定' }).click()
   await page.getByRole('button', { name: '民眾端', exact: true }).click()
   await expect(page.getByTestId('selected-store')).toContainText('暫停收受')
+  await page.getByRole('button', { name: '拍照交付', exact: true }).click()
   await expect(
     page.getByRole('button', { name: '送出交付紀錄' }),
   ).toBeDisabled()
@@ -78,6 +84,7 @@ test('照片檔案、估算失效、搜尋與示意地圖選點', async ({ page 
   ).toHaveCount(0)
   await page.getByRole('button', { name: '地圖：惠姐雜貨店' }).click()
   await expect(page.getByTestId('selected-store')).toContainText('惠姐雜貨店')
+  await page.getByRole('button', { name: '拍照交付', exact: true }).click()
   await page.getByLabel('拍照或選取垃圾照片').setInputFiles({
     name: 'waste.png',
     mimeType: 'image/png',
@@ -169,7 +176,7 @@ test('匯出與重設資料，三端無溢出', async ({ page }, testInfo) => {
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: '匯出示範資料 ↓' }).click()
   await expect((await download).suggestedFilename()).toMatch(
-    /街角垃圾夥伴.*\.json$/,
+    /civil-bin.*\.json$/,
   )
   for (const role of ['店家端', '市府端']) {
     await page.getByRole('button', { name: role, exact: true }).click()

@@ -5,6 +5,7 @@ import { Citizen } from './Citizen'
 import { Merchant } from './Merchant'
 import { City } from './City'
 import './App.css'
+import './mobile.css'
 
 const roles = [
   { id: 'citizen', name: '民眾端', icon: '⌖', detail: '找據點・拍照交付' },
@@ -39,19 +40,19 @@ export default function App() {
     )
     const link = document.createElement('a')
     link.href = url
-    link.download = `街角垃圾夥伴-${dateKey()}.json`
+    link.download = `civil-bin-${dateKey()}.json`
     link.click()
     URL.revokeObjectURL(url)
     setMessage('示範資料已匯出，內含此瀏覽器儲存的照片，請妥善保管。')
   }
   return (
-    <div className="shell">
+    <div className={`shell role-${role}`}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brandmark">♲</span>
           <div>
-            <b>街角垃圾夥伴</b>
-            <small>讓隨手垃圾，有個好去處</small>
+            <b>Civil Bin</b>
+            <small>我們的垃圾桶</small>
           </div>
         </div>
         <div className="side-label">試辦服務平台</div>
@@ -88,15 +89,15 @@ export default function App() {
           <span className="side-pill">● 黑客松展示版</span>
         </div>
         <div className="sidebar-bottom">
-          臺北市示意街區
+          臺北市行人垃圾服務
           <br />
-          <span>店家、地圖與分析數據皆為模擬</span>
+          <span>官方清潔箱位置・店家示範資料</span>
         </div>
       </aside>
       <div className="workspace">
         <div className="topbar">
           <span>
-            街角垃圾夥伴 <span className="slash">/</span> <b>{active.name}</b>
+            Civil Bin <span className="slash">/</span> <b>{active.name}</b>
           </span>
           <span className="top-date">
             {dateKey()} <span className="badge">本機共享示範</span>
@@ -116,7 +117,7 @@ export default function App() {
           {role === 'city' && <City data={data} notify={setMessage} />}
           <footer>
             <div>
-              <b>街角垃圾夥伴</b>
+              <b>Civil Bin</b>
               <p>
                 AI 體積估算為模擬，依所選垃圾類型產生數值，沒有辨識影像。
                 <br />

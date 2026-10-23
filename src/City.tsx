@@ -1,3 +1,4 @@
+import { CityMapPanel } from './CityMapPanel'
 import { number, save } from './actions'
 import { useState } from 'react'
 import {
@@ -114,10 +115,18 @@ function Scenario({
   store,
   notify,
 }: { store: Store } & Pick<PageProps, 'notify'>) {
-  const [distance, setDistance] = useState(String(store.binDistance))
-  const [capacity, setCapacity] = useState(String(store.publicCapacity))
-  const [collections, setCollections] = useState(String(store.collections))
-  const [overflow, setOverflow] = useState(String(store.overflow))
+  const [distance, setDistance] = useState(
+    store.binDistance == null ? '' : String(store.binDistance),
+  )
+  const [capacity, setCapacity] = useState(
+    store.publicCapacity == null ? '' : String(store.publicCapacity),
+  )
+  const [collections, setCollections] = useState(
+    store.collections == null ? '' : String(store.collections),
+  )
+  const [overflow, setOverflow] = useState(
+    store.overflow == null ? '' : String(store.overflow),
+  )
   function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     const values = [distance, capacity, collections, overflow].map(Number)
@@ -238,6 +247,12 @@ export function City({ data, notify }: PageProps) {
           />
         </label>
       </header>
+      <CityMapPanel
+        data={data}
+        day={day}
+        selected={selected}
+        onSelect={setSelected}
+      />
       <div className="metrics four">
         <Metric label="合作據點" value={data.stores.length} unit="間小店" />
         <Metric

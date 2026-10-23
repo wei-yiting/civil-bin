@@ -1,6 +1,9 @@
+import { mockMapNetwork } from './mockMapNetwork'
 import { test, expect } from '@playwright/test'
 
-test('單檔 HTML 不需其他網路資源即可完成交付', async ({ page }) => {
+test.beforeEach(async ({ context }) => mockMapNetwork(context))
+
+test('單檔 HTML 內嵌程式與快照，地圖連線時可完成交付', async ({ page }) => {
   const requests: string[] = []
   const errors: string[] = []
   page.on('request', (request) => requests.push(request.url()))
@@ -10,6 +13,7 @@ test('單檔 HTML 不需其他網路資源即可完成交付', async ({ page }) 
   await expect(
     page.getByRole('heading', { name: '附近哪裡可以丟垃圾？' }),
   ).toBeVisible()
+  await page.getByRole('button', { name: '拍照交付', exact: true }).click()
   await page.getByRole('button', { name: '載入示範照片', exact: true }).click()
   await page
     .getByRole('button', { name: '模擬 AI 體積估算', exact: true })
@@ -29,7 +33,14 @@ test('單檔 HTML 不需其他網路資源即可完成交付', async ({ page }) 
     page.getByRole('heading', { name: '公共垃圾需求與收受分析' }),
   ).toBeVisible()
   expect(errors).toEqual([])
-  expect(requests.filter((url) => !url.startsWith('data:'))).toEqual([
+  expect(
+    requests.filter(
+      (url) =>
+        !url.startsWith('data:') &&
+        !url.includes('tile.openstreetmap.org') &&
+        !url.endsWith('/api/public-bins'),
+    ),
+  ).toEqual([
     'http://127.0.0.1:4175/standalone.html',
     'http://127.0.0.1:4175/standalone.html',
   ])

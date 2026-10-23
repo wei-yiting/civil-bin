@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { seedState } from './domain'
+import { migrateState, seedState } from './domain'
 import type { State } from './domain'
 
 const KEY = 'street-corner-partner-v3'
@@ -8,24 +8,7 @@ function read(): State {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return seedState()
-    const saved = JSON.parse(raw) as State
-    if (
-      saved.version !== 1 ||
-      !Array.isArray(saved.stores) ||
-      saved.stores.length !== 3 ||
-      !Array.isArray(saved.deliveries) ||
-      !saved.claims ||
-      !saved.reviews ||
-      saved.stores.some(
-        (s) => typeof s.name !== 'string' || typeof s.hoursStart !== 'string',
-      ) ||
-      saved.deliveries.some(
-        (r) => !Number.isFinite(r.liters) || typeof r.date !== 'string',
-      )
-    ) {
-      throw new Error('資料格式無法辨識')
-    }
-    return saved
+    return migrateState(JSON.parse(raw))
   } catch {
     warning = '無法讀取已儲存資料，已載入示範資料；原資料未覆寫。'
     return seedState()

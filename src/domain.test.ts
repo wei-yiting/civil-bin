@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  migrateState,
+  registerStore,
   aggregate,
   capacityAnalysis,
   classification,
@@ -159,5 +161,88 @@ describe('估算與營業時間', () => {
         new Date('2026-10-23T17:00:00Z'),
       ),
     ).toBe(true)
+  })
+})
+
+describe('註冊與資料遷移', () => {
+  const input = {
+    name: '真實合作小店',
+    address: '臺北市松山區民生東路四段1號',
+    area: '松山區',
+    lat: 25.058,
+    lng: 121.545,
+    hoursStart: '09:00',
+    hoursEnd: '18:00',
+  }
+  it('註冊新店保留未知量能且不建立假申報', () => {
+    const state = seedState()
+    const store = registerStore(state, input)
+    expect(state.stores).toHaveLength(3)
+    expect(store).toMatchObject({
+      ...input,
+      isDemo: false,
+      enabled: true,
+      publicCapacity: null,
+      collections: null,
+      overflow: null,
+    })
+    state.stores.push(store)
+    expect(state.claims[`${dateKey()}:${store.id}`]).toBeUndefined()
+    expect(classification(state, store.id).level).toBe('missing')
+    expect(Number.isNaN(capacityAnalysis(state, store.id).capacity)).toBe(true)
+    expect(migrateState(JSON.parse(JSON.stringify(state))).stores).toHaveLength(
+      4,
+    )
+  })
+  it('拒絕空欄、無效時段、臺北範圍外及重複店家', () => {
+    const state = seedState()
+    for (const change of [
+      { name: ' ' },
+      { address: '' },
+      { area: '' },
+      { lat: 0 },
+      { lng: NaN },
+      { hoursStart: '25:00' },
+      { hoursEnd: '09:00' },
+    ])
+      expect(() => registerStore(state, { ...input, ...change })).toThrow()
+    state.stores.push(registerStore(state, input))
+    expect(() =>
+      registerStore(state, { ...input, name: ' ' + input.name + ' ' }),
+    ).toThrow()
+  })
+  it('遷移v1保留照片申報查核，補示範座標，不偽造未知舊店位置', () => {
+    const state = seedState()
+    state.reviews.old = '舊查核'
+    const old = {
+      ...state,
+      version: 1,
+      stores: state.stores.map(({ lat, lng, isDemo, ...s }) => {
+        void lat
+        void lng
+        void isDemo
+        return s
+      }),
+    }
+    old.stores.push({ ...old.stores[0]!, id: 'legacy', name: '未知舊店' })
+    const migrated = migrateState(old)
+    expect(migrated.version).toBe(2)
+    expect(migrated.stores[0]).toMatchObject({
+      lat: 25.0588,
+      lng: 121.5434,
+      isDemo: true,
+    })
+    expect(migrated.stores[3]).toMatchObject({
+      lat: null,
+      lng: null,
+      isDemo: true,
+    })
+    expect(migrated.deliveries).toEqual(state.deliveries)
+    expect(migrated.claims).toEqual(state.claims)
+    expect(migrated.reviews.old).toBe('舊查核')
+  })
+  it('拒絕損毀或未支援資料版本', () => {
+    expect(() => migrateState({ ...seedState(), version: 99 })).toThrow()
+    expect(() => migrateState({ ...seedState(), stores: [] })).toThrow()
   })
 })

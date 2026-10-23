@@ -1,4 +1,5 @@
 import sampleWaste from './assets/sample-waste.svg'
+import { hasCoordinates } from './geo'
 
 export interface Store {
   id: string
@@ -10,10 +11,13 @@ export interface Store {
   enabled: boolean
   x: number
   y: number
-  binDistance: number
-  publicCapacity: number
-  collections: number
-  overflow: number
+  lat: number | null
+  lng: number | null
+  isDemo: boolean
+  binDistance: number | null
+  publicCapacity: number | null
+  collections: number | null
+  overflow: number | null
 }
 export interface Delivery {
   id: string
@@ -30,7 +34,7 @@ export interface Delivery {
   reason: string
 }
 export interface State {
-  version: 1
+  version: 2
   stores: Store[]
   deliveries: Delivery[]
   claims: Record<string, number>
@@ -76,6 +80,9 @@ export function seedState(): State {
   const date = dateKey()
   const stores: Store[] = [
     {
+      lat: 25.0588,
+      lng: 121.5434,
+      isDemo: true,
       id: 'a',
       name: '阿明早餐店',
       area: '民生東路商圈',
@@ -88,6 +95,9 @@ export function seedState(): State {
       overflow: 3,
     },
     {
+      lat: 25.0572,
+      lng: 121.547,
+      isDemo: true,
       id: 'b',
       name: '惠姐雜貨店',
       area: '市場周邊',
@@ -100,6 +110,9 @@ export function seedState(): State {
       overflow: 0,
     },
     {
+      lat: 25.0552,
+      lng: 121.5406,
+      isDemo: true,
       id: 'c',
       name: '小林豆漿',
       area: '住宅街口',
@@ -146,7 +159,7 @@ export function seedState(): State {
     reason: '',
   }))
   return {
-    version: 1,
+    version: 2,
     stores,
     deliveries,
     claims: { [`${date}:a`]: 22, [`${date}:b`]: 5.4, [`${date}:c`]: 10 },
@@ -285,9 +298,9 @@ export function capacityAnalysis(
   if (Number.isFinite(demand) && Number.isFinite(capacity) && store) {
     if (capacity === 0 && demand > 0)
       recommendation = '目前無有效清運量能，請優先安排現場調查及收運。'
-    else if (store.overflow > 0 || utilization > 0.8)
+    else if ((store.overflow ?? 0) > 0 || utilization > 0.8)
       recommendation = '優先檢查滿溢與清運頻率，評估增班及垃圾桶容量。'
-    else if (store.binDistance > 300 && demand > 0)
+    else if ((store.binDistance ?? 0) > 300 && demand > 0)
       recommendation = '公共垃圾桶距離較遠，建議持續觀察並評估新增設施。'
     else
       recommendation =
@@ -368,4 +381,170 @@ export function reviewKey(
   }
   const hex = (value: number) => (value >>> 0).toString(16).padStart(8, '0')
   return `review-v2:${hex(first)}${hex(second)}`
+}
+
+export const TAIPEI_DISTRICTS = [
+  '中正區',
+  '大同區',
+  '中山區',
+  '松山區',
+  '大安區',
+  '萬華區',
+  '信義區',
+  '士林區',
+  '北投區',
+  '內湖區',
+  '南港區',
+  '文山區',
+] as const
+export interface RegistrationInput {
+  name: string
+  address: string
+  area: string
+  lat: number
+  lng: number
+  hoursStart: string
+  hoursEnd: string
+}
+const validHours = (start: unknown, end: unknown) =>
+  typeof start === 'string' &&
+  typeof end === 'string' &&
+  /^([01]\d|2[0-3]):[0-5]\d$/.test(start) &&
+  /^([01]\d|2[0-3]):[0-5]\d$/.test(end) &&
+  start !== end
+export function registerStore(state: State, input: RegistrationInput): Store {
+  const name = input.name.trim()
+  const address = input.address.trim()
+  const area = input.area.trim()
+  if (!name || !address || !TAIPEI_DISTRICTS.some((d) => d === area))
+    throw new Error('請填寫店名、臺北市行政區與完整地址。')
+  if (name.length > 100 || address.length > 200)
+    throw new Error('店名不得超過 100 字、地址不得超過 200 字。')
+  if (
+    !hasCoordinates(input) ||
+    input.lat < 24.95 ||
+    input.lat > 25.22 ||
+    input.lng < 121.45 ||
+    input.lng > 121.68
+  )
+    throw new Error('請選擇臺北市範圍內的有效座標。')
+  if (!validHours(input.hoursStart, input.hoursEnd))
+    throw new Error('請設定不同且有效的開始、結束時間。')
+  if (
+    state.stores.some(
+      (s) => s.name.trim() === name && s.address.trim() === address,
+    )
+  )
+    throw new Error('相同店名與地址已登記。')
+  let hash = 0x811c9dc5
+  for (const char of `${name}\0${address}`)
+    hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193)
+  const base = `registered-${(hash >>> 0).toString(16)}`
+  let id = base
+  let suffix = 1
+  while (state.stores.some((s) => s.id === id)) id = `${base}-${suffix++}`
+  return {
+    id,
+    name,
+    address,
+    area,
+    lat: input.lat,
+    lng: input.lng,
+    isDemo: false,
+    hoursStart: input.hoursStart,
+    hoursEnd: input.hoursEnd,
+    enabled: true,
+    x: 50,
+    y: 50,
+    binDistance: null,
+    publicCapacity: null,
+    collections: null,
+    overflow: null,
+  }
+}
+
+export function migrateState(raw: unknown): State {
+  const fail = () => {
+    throw new Error('資料格式無法辨識')
+  }
+  if (!raw || typeof raw !== 'object') return fail()
+  const state = raw as State
+  if (
+    !([1, 2] as number[]).includes(state.version) ||
+    !Array.isArray(state.stores) ||
+    !state.stores.length ||
+    !Array.isArray(state.deliveries) ||
+    !state.claims ||
+    typeof state.claims !== 'object' ||
+    Array.isArray(state.claims) ||
+    !state.reviews ||
+    typeof state.reviews !== 'object' ||
+    Array.isArray(state.reviews)
+  )
+    return fail()
+  const demos = seedState().stores
+  const ids = new Set<string>()
+  const stores = state.stores.map((s) => {
+    if (
+      !s ||
+      typeof s.id !== 'string' ||
+      !s.id ||
+      ids.has(s.id) ||
+      typeof s.name !== 'string' ||
+      typeof s.address !== 'string' ||
+      typeof s.area !== 'string' ||
+      typeof s.enabled !== 'boolean' ||
+      !validHours(s.hoursStart, s.hoursEnd)
+    )
+      return fail()
+    ids.add(s.id)
+    const demo = demos.find(
+      (d) => d.id === s.id && d.name === s.name && d.address === s.address,
+    )
+    const coordinates = hasCoordinates(s)
+      ? { lat: s.lat, lng: s.lng }
+      : demo
+        ? { lat: demo.lat, lng: demo.lng }
+        : { lat: null, lng: null }
+    const amount = (value: unknown) => (validAmount(value) ? value : null)
+    return {
+      ...s,
+      ...coordinates,
+      isDemo:
+        state.version === 2 && typeof s.isDemo === 'boolean' ? s.isDemo : true,
+      x: Number.isFinite(s.x) ? s.x : 50,
+      y: Number.isFinite(s.y) ? s.y : 50,
+      binDistance: amount(s.binDistance),
+      publicCapacity: amount(s.publicCapacity),
+      collections: amount(s.collections),
+      overflow: amount(s.overflow),
+    }
+  })
+  for (const r of state.deliveries) {
+    if (
+      !r ||
+      typeof r.id !== 'string' ||
+      !ids.has(r.storeId) ||
+      typeof r.date !== 'string' ||
+      !validAmount(r.liters) ||
+      !validAmount(r.low) ||
+      !validAmount(r.high) ||
+      r.low > r.liters ||
+      r.high < r.liters ||
+      typeof r.createdAt !== 'string' ||
+      !Number.isFinite(Date.parse(r.createdAt)) ||
+      typeof r.kind !== 'string' ||
+      !['pending', 'accepted', 'rejected'].includes(r.status) ||
+      !['photo', 'manual'].includes(r.source) ||
+      !(r.photo === null || typeof r.photo === 'string') ||
+      typeof r.reason !== 'string'
+    )
+      return fail()
+  }
+  if (
+    Object.values(state.claims).some((v) => !validAmount(v)) ||
+    Object.values(state.reviews).some((v) => typeof v !== 'string')
+  )
+    return fail()
+  return { ...state, version: 2, stores }
 }

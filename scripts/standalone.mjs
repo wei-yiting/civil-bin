@@ -31,4 +31,4 @@ html = html.replace(
   () => `href="data:image/svg+xml,${encodeURIComponent(icon)}"`,
 )
 await writeFile(resolve(directory, 'standalone.html'), html)
-console.log('已產生 dist/standalone.html（JavaScript、CSS、圖像均內嵌）')
+console.log('已產生 dist/standalone.html（程式與資料內嵌；真實底圖需連網）')

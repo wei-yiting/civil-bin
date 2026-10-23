@@ -1,5 +1,7 @@
 import { save } from './actions'
 import { useState } from 'react'
+import { Registration } from './Registration'
+import { GeoMap } from './GeoMap'
 import { aggregate, dateKey } from './domain'
 import type { Delivery, Store } from './domain'
 import { Metric, StoreStatus } from './ui'
@@ -19,17 +21,34 @@ const tabs = [
 
 export function Merchant({ data, notify }: PageProps) {
   const [selected, setSelected] = useState(data.stores[0].id)
+  const [registering, setRegistering] = useState(false)
   const store = data.stores.find((s) => s.id === selected)!
   return (
     <>
       <header className="page-header">
         <div>
           <div className="eyebrow">讓小店的幫忙，都有憑有據</div>
-          <h1>店家收受管理</h1>
+          <h1>我的街角小店</h1>
           <p>確認現場交付、安排收受時段，再完成今日代收申報。</p>
         </div>
         <StoreStatus store={store} />
       </header>
+      <section className="merchant-onboarding">
+        <div>
+          <span className="eyebrow">成為我們的街角夥伴</span>
+          <h2>
+            {store.isDemo ? '讓你的小店，成為城市的好鄰居。' : store.name}
+          </h2>
+          <p>
+            {store.isDemo
+              ? '目前為示範店家。登錄店名、地址與位置，開始設定你的收受服務。'
+              : store.address}
+          </p>
+        </div>
+        <button className="button" onClick={() => setRegistering(true)}>
+          登錄我的店家
+        </button>
+      </section>
       <div className="store-switch">
         <label>
           選擇合作店家
@@ -45,6 +64,34 @@ export function Merchant({ data, notify }: PageProps) {
           </select>
         </label>
       </div>
+      {registering && (
+        <div className="delivery-overlay">
+          <div
+            className="delivery-dialog registration-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="登錄合作店家"
+          >
+            <button
+              className="close-delivery"
+              aria-label="關閉店家登錄"
+              onClick={() => setRegistering(false)}
+            >
+              ×
+            </button>
+            <Registration
+              notify={notify}
+              onRegistered={(id) => {
+                setSelected(id)
+                setRegistering(false)
+              }}
+              renderMap={(position, onPick) => (
+                <GeoMap picked={position} onPick={onPick} />
+              )}
+            />
+          </div>
+        </div>
+      )}
       <MerchantStore key={store.id} store={store} data={data} notify={notify} />
     </>
   )
