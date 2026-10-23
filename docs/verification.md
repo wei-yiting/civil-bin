@@ -100,3 +100,11 @@
 - 65 個單元測試與 30 個桌機／手機 Chromium 案例通過；隔離 PostgreSQL 實際執行六份 SQL 與重跑檢查通過。實體手機仍需使用者實拍驗證。
 - Supabase 雲端快照禁止本機自動補示範資料，避免未匯入時假顯示 270 店。
 - Vercel 正式環境使用現有 Supabase 的公開連線設定，env 與本機 Vercel metadata 不進 Git；部署不包含 SQL、測試輸出、文件與本機 env。
+
+## Vercel 正式站（2026-10-24）
+
+- 正式網址 https://civil-bin.vercel.app ，未帶 Vercel 憑證直接讀取 HTTPS 首頁為 200；正式 API `/api/public-bins` 回傳 200 與 773 個官方位置。
+- 首次實際部署發現 Node ESM 編譯後仍引用 `.ts` 檔，造成 API 500；依 runtime 日誌修正為 `.js` 相對匯入，加入 `npm run test:functions` 實際編譯、載入及 method guard 驗證。修正已重新部署成功，不只看 build 成功。
+- 正式站民眾入口使用匿名身分，上傳明確合成 QA PNG 至 private Storage，提交小件 1 件，頁面顯示一筆待店家確認。未使用私人照片，實體手機相機尚未代為驗證。
+- 展示入口使用獨立 auth storage key，仍由 Supabase 驗證權限；不帶參數的舊登入維持原行為。
+- Vercel GitHub 連線未成功；目前由已登入 CLI 直接部署，不宣稱 push 自動部署已啟用。正式站店家、市府需使用者自行登入，密碼未交給開發代理。

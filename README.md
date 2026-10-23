@@ -4,9 +4,19 @@
 
 使用 React、TypeScript、Vite、Leaflet 1.9.4 與 OpenStreetMap 底圖。地圖不需要 Google Maps API key；參考 `debugthon-carpool` 的地圖封裝與圖層分離方式，未沿用其他專案的金鑰。
 
+## 手機與正式展示
+
+已部署至 **https://civil-bin.vercel.app**，共用既有 Supabase。
+
+- [民眾入口](https://civil-bin.vercel.app/?demoSession=citizen#citizen)：手機拍照、尺寸登記與送出。
+- [店家入口](https://civil-bin.vercel.app/?demoSession=merchant#merchant)：登入已授權店家帳號後確認交付與結算。
+- [市府入口](https://civil-bin.vercel.app/?demoSession=city#city)：登入市府帳號後查看同步資料。
+
+三個入口可在同一瀏覽器分別保留登入。手機請直接開 HTTPS 網址；不能以手機的 localhost 連到筆電。實體手機相機操作仍需使用者實測。正式站包含虛構資料，不是真實收受服務。
+
 ## 立即啟動
 
-需要 Node.js 22.12 以上與 npm（本專案使用 22.23.4，可先 `nvm use`）。
+需要 Node.js 22（22.12 以上）與 npm（本專案使用 22.23.4，可先 `nvm use`）。
 
 ```sh
 git clone https://github.com/wei-yiting/civil-bin.git
@@ -124,7 +134,7 @@ npm run test:e2e
 
 ## 部署與手機使用
 
-- **Vercel**：匯入 repo，Node 22，build command `npm run build`，output directory `dist`。`api/public-bins.ts` 提供 Node 資料端點，前端可連線更新。此路徑依官方介面準備，本次未宣稱已部署 Vercel。
+- **Vercel**：匯入 repo，Node 22，build command `npm run build`，output directory `dist`。`api/public-bins.ts` 提供 Node 資料端點，前端可連線更新。已實際部署並驗證首頁 HTTPS 200 與官方位置 API 回傳 773 個位置。GitHub 自動連結未成功，目前須使用 CLI 手動部署。
 - **GitHub Pages**：Settings → Pages → Source 選 GitHub Actions，執行 `Deploy Pages`。提供公開 HTTPS 與真實底圖，位置資料使用附擷取時間的內嵌快照。
 - **一般靜態主機／Netlify**：部署 `dist` 可使用快照；若要最新位置端點，須另配置符合 `api/public-bins` 契約的 Node 服務，不能假設 Vercel 的 api 會在其他主機自動運作。
 - **手機**：使用 HTTPS 網址以取得定位能力；將筆電的 localhost 網址貼到手機不會連到筆電。未設定 Supabase 時，手機與筆電資料各自獨立；跨裝置展示須完成 Supabase 初始化。

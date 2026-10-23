@@ -47,6 +47,12 @@ VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 
 ## 4. Vercel
 
+現有正式站：https://civil-bin.vercel.app 。已設定 Production 的兩個 Supabase 公開變數，Node runtime 22。CLI 專案為 `dong-weis-projects/civil-bin`；`.vercel/` 保留本機連結但不進 Git。GitHub 連結未成功，現在 push 不會自動部署。
+
+目前重部署方式：`npx vercel@65.2.0 deploy --prod --yes --scope dong-weis-projects`（須保有 Vercel 登入）。若未登入，先依 CLI 提示登入，勿將 token 放入前端 env。日後可在 Vercel Project Settings → Git 完成 GitHub repo 連結，才會啟用 push 自動部署。
+
+以下為新專案的設定方式：
+
 1. 在 Vercel → Add New → Project 匯入 `wei-yiting/civil-bin`。
 2. Framework 選 Vite，Build Command `npm run build`，Output Directory `dist`，Node.js 22。
 3. Environment Variables 新增上述兩個 `VITE_SUPABASE_*`，套用 Production；Preview 建議使用另一個測試 Supabase project。
@@ -64,7 +70,7 @@ GitHub Pages 不會自動取得 Vercel 的環境變數；保留本機示範模�
 - 照片位於 private bucket，上傳限 5 MB JPEG／PNG／WebP，限本人、收受店家與市府授權讀取。失敗交易會嘗試刪除孤立上傳；管理員仍應定期清理未引用檔案。
 - 全體可看到店家與申報量，以及預載示範紀錄；真實交付只供本人、收受店家與市府讀取。此 demo 不收姓名、電話；正式服務仍需要資料保存／刪除政策。
 - seed 交付是虛構數值，附上既有示範插圖以呈現累計量。插圖不是實拍影像證據，不能將此資料聲稱為真實政府統計。
-- 已在使用者 Supabase 與三個獨立本機 origin 實測匿名民眾送件、店家修正確認、每日申報與市府即時更新。實體手機與 Vercel 正式部署仍需另驗，詳見 docs/verification.md。
+- 已在使用者 Supabase 與三個獨立本機 origin 實測匿名民眾送件、店家修正確認、每日申報與市府即時更新。正式站首頁、API 與合成照片交付已驗證；實體手機相機與正式站店家／市府登入後流程仍需接續驗證，詳見 docs/verification.md。
 
 ## 本機 DB 驗證
 
