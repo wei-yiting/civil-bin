@@ -1,3 +1,4 @@
+import { useNow } from './useNow'
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -50,6 +51,7 @@ export function GeoMap({
   fitToken = 0,
   onCenterChange,
 }: GeoMapProps) {
+  const now = useNow()
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const tileRef = useRef<L.TileLayer | null>(null)
@@ -239,7 +241,7 @@ export function GeoMap({
       storeGroup.remove()
       group.remove()
     }
-  }, [stores, bins, selected, volumes, overview])
+  }, [stores, bins, selected, volumes, overview, now])
   useEffect(() => {
     const points = stores.filter((s): s is Store & Coordinates =>
       hasCoordinates(s),

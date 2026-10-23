@@ -9,7 +9,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:5196',
     trace: 'on-first-retry',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',
@@ -23,14 +23,16 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'npm run dev -- --host 127.0.0.1 --port 5173 --strictPort',
-      url: 'http://127.0.0.1:5173',
-      reuseExistingServer: !process.env.CI,
+      command: 'npm run dev -- --host 127.0.0.1 --port 5196 --strictPort',
+      url: 'http://127.0.0.1:5196',
+      reuseExistingServer: false,
+      env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_PUBLISHABLE_KEY: '' },
     },
     {
       command: 'npm run preview -- --host 127.0.0.1 --port 4175 --strictPort',
       url: 'http://127.0.0.1:4175',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
+      env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_PUBLISHABLE_KEY: '' },
     },
   ],
 })

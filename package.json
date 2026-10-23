@@ -1,7 +1,7 @@
 {
   "name": "civil-bin",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,9 +12,12 @@
     "test:e2e": "playwright test",
     "format": "prettier --write src tests scripts server api *.ts *.json .github README.md docs/*.md",
     "format:check": "prettier --check src tests scripts server api *.ts *.json .github README.md docs/*.md",
-    "data:update": "node --experimental-strip-types scripts/update-bins.mjs"
+    "data:update": "node --experimental-strip-types scripts/update-bins.mjs",
+    "test:db": "node scripts/test-db.mjs",
+    "seed:cloud": "node scripts/seed-cloud.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "leaflet": "^1.9.4",
     "papaparse": "^5.7.0",
     "react": "^19.3.1",

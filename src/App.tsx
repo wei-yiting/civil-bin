@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { dateKey } from './domain'
-import { resetData, storageWarning, useData } from './persistence'
+import {
+  resetData,
+  storageWarning,
+  useData,
+  useCloudStatus,
+} from './persistence'
+import { CloudPanel } from './CloudPanel'
 import { Citizen } from './Citizen'
 import { Merchant } from './Merchant'
 import { City } from './City'
@@ -21,6 +27,7 @@ export type Notify = (message: string) => void
 
 export default function App() {
   const data = useData()
+  const cloud = useCloudStatus()
   const [role, setRole] = useState<Role>(currentRole)
   const [message, setMessage] = useState(storageWarning)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -29,7 +36,21 @@ export default function App() {
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
   }, [])
-  const active = roles.find((r) => r.id === role)!
+  const allowedRole =
+    !cloud.configured || role === 'citizen' || cloud.role === role
+  const visibleRole = allowedRole ? role : 'citizen'
+  const merchantData = cloud.configured
+    ? {
+        ...data,
+        stores: data.stores.filter((store) =>
+          cloud.storeIds.includes(store.id),
+        ),
+        deliveries: data.deliveries.filter((delivery) =>
+          cloud.storeIds.includes(delivery.storeId),
+        ),
+      }
+    : data
+  const active = roles.find((r) => r.id === visibleRole)!
   function navigate(next: Role) {
     window.location.assign('#' + next)
     setRole(next)
@@ -46,7 +67,7 @@ export default function App() {
     setMessage('示範資料已匯出，內含此瀏覽器儲存的照片，請妥善保管。')
   }
   return (
-    <div className={`shell role-${role}`}>
+    <div className={`shell role-${visibleRole}`}>
       <aside className="sidebar">
         <div className="brand">
           <span className="brandmark">♲</span>
@@ -60,9 +81,12 @@ export default function App() {
           {roles.map((r) => (
             <button
               key={r.id}
-              aria-current={role === r.id ? 'page' : undefined}
+              aria-current={visibleRole === r.id ? 'page' : undefined}
               aria-label={r.name}
-              className={`nav ${role === r.id ? 'active' : ''}`}
+              className={`nav ${visibleRole === r.id ? 'active' : ''}`}
+              disabled={
+                cloud.configured && r.id !== 'citizen' && cloud.role !== r.id
+              }
               onClick={() => navigate(r.id)}
             >
               <span className="navicon">{r.icon}</span>
@@ -100,10 +124,25 @@ export default function App() {
             Civil Bin <span className="slash">/</span> <b>{active.name}</b>
           </span>
           <span className="top-date">
-            {dateKey()} <span className="badge">本機共享示範</span>
+            {dateKey()}{' '}
+            <span className="badge">
+              {cloud.configured ? '雲端共享' : '本機共享示範'}
+            </span>
           </span>
         </div>
         <main>
+          <CloudPanel />
+          {cloud.configured && !cloud.ready && (
+            <p role="status">等待雲端資料，請檢查連線或 Supabase 設定。</p>
+          )}
+          {cloud.ready && data.stores.length === 0 && (
+            <p role="status">
+              目前尚無合作店家。店家帳號登入後可登錄店家；管理員也可匯入示範資料。
+            </p>
+          )}
+          {!allowedRole && (
+            <p role="alert">此角色需要授權帳號，請先在連線面板登入。</p>
+          )}
           {message && (
             <div className="toast" role="status">
               <span>{message}</span>
@@ -112,16 +151,26 @@ export default function App() {
               </button>
             </div>
           )}
-          {role === 'citizen' && <Citizen data={data} notify={setMessage} />}
-          {role === 'merchant' && <Merchant data={data} notify={setMessage} />}
-          {role === 'city' && <City data={data} notify={setMessage} />}
+          {cloud.ready &&
+            data.stores.length > 0 &&
+            visibleRole === 'citizen' && (
+              <Citizen data={data} notify={setMessage} />
+            )}
+          {cloud.ready && visibleRole === 'merchant' && (
+            <Merchant data={merchantData} notify={setMessage} />
+          )}
+          {cloud.ready && data.stores.length > 0 && visibleRole === 'city' && (
+            <City data={data} notify={setMessage} />
+          )}
           <footer>
             <div>
               <b>Civil Bin</b>
               <p>
                 AI 體積估算為模擬，依所選垃圾類型產生數值，沒有辨識影像。
                 <br />
-                照片與資料只儲存在此瀏覽器；同來源分頁同步，跨裝置不共享。角色切換僅供展示。
+                {cloud.configured
+                  ? '資料儲存於 Supabase，跨裝置同步；照片僅供授權者讀取。體積估算仍為模擬。'
+                  : '照片與資料只儲存在此瀏覽器；同來源分頁同步，跨裝置不共享。角色切換僅供展示。'}
               </p>
             </div>
             <div className="footer-actions">
@@ -130,6 +179,7 @@ export default function App() {
               </button>
               <button
                 className="text-button"
+                disabled={cloud.configured}
                 onClick={() => setConfirmReset(true)}
               >
                 重設示範資料
@@ -157,9 +207,9 @@ export default function App() {
               </button>
               <button
                 className="button danger"
-                onClick={() => {
+                onClick={async () => {
                   try {
-                    resetData()
+                    await resetData()
                     setConfirmReset(false)
                     setMessage('示範資料已重設。')
                   } catch (e) {

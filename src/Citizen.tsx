@@ -1,6 +1,8 @@
+import { useCloudStatus } from './persistence'
+import { useNow } from './useNow'
 import { save } from './actions'
 import { useMemo, useState } from 'react'
-import { dateKey, estimate, isOpen } from './domain'
+import { dateKey, estimate, isOpen, todayHoursLabel } from './domain'
 import type { Estimate } from './domain'
 import { preparePhoto, SAMPLE } from './photo'
 import { StoreStatus } from './ui'
@@ -19,6 +21,8 @@ import type { PublicBin } from './bin-data'
 import type { PageProps } from './ui'
 
 export function Citizen({ data, notify }: PageProps) {
+  const cloud = useCloudStatus()
+  const now = useNow()
   const [selected, setSelected] = useState(data.stores[0].id)
   const [query, setQuery] = useState('')
   const [onlyOpen, setOnlyOpen] = useState(false)
@@ -47,9 +51,9 @@ export function Citizen({ data, notify }: PageProps) {
       data.stores.filter(
         (s) =>
           `${s.name}${s.area}`.includes(query.trim()) &&
-          (!onlyOpen || isOpen(s)),
+          (!onlyOpen || isOpen(s, new Date(now))),
       ),
-    [data.stores, query, onlyOpen],
+    [data.stores, query, onlyOpen, now],
   )
   const history = data.deliveries.filter(
     (r) =>
@@ -58,13 +62,14 @@ export function Citizen({ data, notify }: PageProps) {
       !r.id.startsWith('sample-'),
   )
 
-  function submit() {
-    if (!photo || !result) return
+  async function submit() {
+    if (busy || !photo || !result) return
     if (!isOpen(store)) {
       notify('此據點目前不在收受時段，請選擇其他據點。')
       return
     }
-    const done = save(
+    setBusy(true)
+    const done = await save(
       (draft) => {
         draft.deliveries.unshift({
           id: crypto.randomUUID(),
@@ -82,6 +87,7 @@ export function Citizen({ data, notify }: PageProps) {
       notify,
       '交付紀錄已送出，請到店讓店家確認。',
     )
+    setBusy(false)
     if (done) {
       setPhoto(null)
       setResult(null)
@@ -230,9 +236,7 @@ export function Citizen({ data, notify }: PageProps) {
             <StoreStatus store={store} />
           </div>
           <div className="place-facts">
-            <span>
-              ◷ {store.hoursStart}–{store.hoursEnd}
-            </span>
+            <span>◷ {todayHoursLabel(store)}</span>
             <span>
               ⌖{' '}
               {hasCoordinates(store)
@@ -275,7 +279,7 @@ export function Citizen({ data, notify }: PageProps) {
                   {s.isDemo && <small>示範</small>}
                 </b>
                 <small>
-                  {s.area}・{s.hoursStart}–{s.hoursEnd}
+                  {s.area}・{todayHoursLabel(s)}
                 </small>
               </span>
               <span className="place-right">
@@ -347,7 +351,7 @@ export function Citizen({ data, notify }: PageProps) {
                 <span className="step-label">拍照 → 估算 → 確認</span>
               </div>
               <div className="card-body">
-                <div className="chosen-store" data-testid="selected-store">
+                <div className="chosen-store" data-testid="delivery-store">
                   <span className="store-symbol">▤</span>
                   <div>
                     <b>{store.name}</b>
@@ -461,8 +465,9 @@ export function Citizen({ data, notify }: PageProps) {
                   </div>
                 )}
                 <p className="privacy-note">
-                  照片會縮圖後保存在此瀏覽器，供店家端查看；不會上傳伺服器或傳送給
-                  AI。
+                  {cloud.configured
+                    ? '送出後照片會上傳到 private 儲存空間，供本人、收受店家與市府查看；目前不會傳送給 AI。'
+                    : '照片會縮圖後保存在此瀏覽器，供店家端查看；不會上傳伺服器或傳送給 AI。'}
                 </p>
                 <button
                   className="button full"

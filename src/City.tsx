@@ -9,7 +9,7 @@ import {
   reviewKey,
 } from './domain'
 import type { Store } from './domain'
-import { Metric } from './ui'
+import { Metric, StoreStatus } from './ui'
 import type { PageProps } from './ui'
 
 function Review({
@@ -73,10 +73,10 @@ function Review({
             ))}
         </div>
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault()
             if (!note.trim()) return
-            save(
+            await save(
               (draft) => {
                 draft.reviews[key] = note.trim()
               },
@@ -111,10 +111,18 @@ function Review({
   )
 }
 
+type ScenarioValues = Pick<
+  Store,
+  'binDistance' | 'publicCapacity' | 'collections' | 'overflow'
+>
 function Scenario({
   store,
   notify,
-}: { store: Store } & Pick<PageProps, 'notify'>) {
+  onChange,
+}: { store: Store; onChange: (value: ScenarioValues) => void } & Pick<
+  PageProps,
+  'notify'
+>) {
   const [distance, setDistance] = useState(
     store.binDistance == null ? '' : String(store.binDistance),
   )
@@ -139,21 +147,13 @@ function Scenario({
       notify('請輸入有效非負數，清運與滿溢次數須為整數。')
       return
     }
-    save(
-      (draft) => {
-        Object.assign(
-          draft.stores.find((s) => s.id === store.id)!,
-          {
-            binDistance: values[0],
-            publicCapacity: values[1],
-            collections: values[2],
-            overflow: values[3],
-          },
-        )
-      },
-      notify,
-      '模擬情境已更新，分析結果已重新計算。',
-    )
+    onChange({
+      binDistance: values[0],
+      publicCapacity: values[1],
+      collections: values[2],
+      overflow: values[3],
+    })
+    notify('模擬情境已更新，只用於本次畫面試算，未改寫店家或官方資料。')
   }
   return (
     <form className="scenario-form" onSubmit={submit}>
@@ -215,6 +215,7 @@ export function City({ data, notify }: PageProps) {
   const [day, setDay] = useState(dateKey())
   const [selected, setSelected] = useState(data.stores[0].id)
   const [onlyFlags, setOnlyFlags] = useState(false)
+  const [scenarios, setScenarios] = useState<Record<string, ScenarioValues>>({})
   const store = data.stores.find((s) => s.id === selected)!
   const summaries = data.stores.map((s) => ({
     store: s,
@@ -225,7 +226,15 @@ export function City({ data, notify }: PageProps) {
   const flags = summaries.filter(
     (s) => s.result.level === 'high' || s.result.level === 'low',
   )
-  const analysis = capacityAnalysis(data, selected, day)
+  const scenarioStore = { ...store, ...scenarios[selected] }
+  const analysis = capacityAnalysis(
+    {
+      ...data,
+      stores: data.stores.map((s) => (s.id === selected ? scenarioStore : s)),
+    },
+    selected,
+    day,
+  )
   return (
     <>
       <header className="page-header">
@@ -311,6 +320,7 @@ export function City({ data, notify }: PageProps) {
                     <td>
                       <b>{s.name}</b>
                       <small>{s.area}</small>
+                      {day === dateKey() && <StoreStatus store={s} />}
                     </td>
                     <td>
                       {number(evidence.liters)} 公升
@@ -454,12 +464,15 @@ export function City({ data, notify }: PageProps) {
             </div>
             <h3>調整模擬情境</h3>
             <p className="muted">
-              下列為示範假設，可調整後觀察建議。尚未接入真實清運與滿溢資料；容量為單桶容量。
+              下列為示範假設，可調整後觀察試算。修改只作用於本次畫面，不寫入店家或官方資料；尚未接入真實清運與滿溢資料，容量為單桶容量。
             </p>
             <Scenario
               key={`${store.id}:${store.publicCapacity}:${store.collections}:${store.binDistance}:${store.overflow}`}
-              store={store}
+              store={scenarioStore}
               notify={notify}
+              onChange={(value) =>
+                setScenarios((previous) => ({ ...previous, [store.id]: value }))
+              }
             />
             <div className="mini-note">
               政策研判仍需垃圾桶本身垃圾量、行人流量、長期滿溢與現場核驗。照片模擬值不可直接作為補助依據。

@@ -118,17 +118,33 @@ test('市府全區地圖可切換申報量與行政區圖層', async ({ page }) 
   await page
     .getByRole('combobox', { name: '地圖顯示數值', exact: true })
     .selectOption('claims')
-  const cluster = page.getByRole('button', {
-    name: '放大 3 個合作店家',
-    exact: true,
-  })
-  await expect(cluster).toContainText('37.4')
-  await cluster.click()
+  await expect(page.getByText(/773 個官方位置・24 個合作點/)).toBeVisible()
+  await page
+    .getByRole('combobox', { name: '地圖行政區', exact: true })
+    .selectOption('松山區')
+  await page.getByRole('button', { name: '查看全區', exact: true }).click()
+  await page.getByTestId('geo-map').focus()
+  await page.getByTestId('geo-map').press('+')
+  await page
+    .getByRole('combobox', { name: '地圖行政區', exact: true })
+    .selectOption('')
+  await page
+    .getByRole('row')
+    .filter({ hasText: '惠姐雜貨店' })
+    .getByRole('button', { name: '查核詳情' })
+    .click()
+  await page
+    .getByRole('row')
+    .filter({ hasText: '阿明早餐店' })
+    .getByRole('button', { name: '查核詳情' })
+    .click()
   await expect(
     page.getByRole('button', { name: '地圖：阿明早餐店', exact: true }),
   ).toContainText('22.0')
   await page
-    .getByRole('button', { name: '地圖：惠姐雜貨店', exact: true })
+    .getByRole('row')
+    .filter({ hasText: '惠姐雜貨店' })
+    .getByRole('button', { name: '查核詳情' })
     .click()
   await expect(
     page.getByRole('heading', { name: '惠姐雜貨店・查核詳情', exact: true }),

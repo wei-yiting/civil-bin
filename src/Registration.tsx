@@ -1,8 +1,10 @@
+import { useCloudStatus } from './persistence'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Notify } from './App'
 import { save } from './actions'
-import { registerStore, TAIPEI_DISTRICTS } from './domain'
+import { registerStore, TAIPEI_DISTRICTS, defaultWeeklyHours } from './domain'
+import { WeeklyHoursEditor } from './WeeklyHoursEditor'
 import type { Coordinates } from './geo'
 
 export interface RegistrationProps {
@@ -19,11 +21,12 @@ export function Registration({
   notify,
   renderMap,
 }: RegistrationProps) {
+  const cloud = useCloudStatus()
   const [name, setName] = useState('')
   const [area, setArea] = useState<string>('松山區')
   const [address, setAddress] = useState('')
-  const [start, setStart] = useState('09:00')
-  const [end, setEnd] = useState('18:00')
+  const [hours, setHours] = useState(() => defaultWeeklyHours('09:00', '18:00'))
+  const [saving, setSaving] = useState(false)
   const [lat, setLat] = useState('')
   const [lng, setLng] = useState('')
   const position =
@@ -47,30 +50,38 @@ export function Registration({
           <span className="eyebrow">一起成為街角夥伴</span>
           <h2 id="registration-title">註冊合作店家</h2>
         </div>
-        <span className="badge gray">本機展示登記</span>
+        <span className="badge gray">
+          {cloud.configured ? '雲端店家登記' : '本機展示登記'}
+        </span>
       </div>
       <div className="card-body">
         <p className="muted">
-          填寫店家資訊與收受位置，完成後即可在民眾端地圖與店家端查看。登記僅儲存在此瀏覽器，尚未提交市府審核。
+          填寫店家資訊與收受位置，完成後即可在民眾端地圖與店家端查看。
+          {cloud.configured
+            ? '資料會保存到共享資料庫，此登記不代表市府核准。'
+            : '登記僅儲存在此瀏覽器，尚未提交市府審核。'}
         </p>
         <form
           noValidate
           data-testid="registration-form"
-          onSubmit={(event) => {
+          onSubmit={async (event) => {
             event.preventDefault()
             if (!lat.trim() || !lng.trim()) {
               notify('請在地圖選擇店家位置，或填寫經緯度。')
               return
             }
+            if (saving) return
+            setSaving(true)
             let registeredId = ''
-            const done = save(
+            const done = await save(
               (draft) => {
                 const store = registerStore(draft, {
                   name,
                   area,
                   address,
-                  hoursStart: start,
-                  hoursEnd: end,
+                  hoursStart: hours[1].start,
+                  hoursEnd: hours[1].end,
+                  weeklyHours: hours,
                   lat: Number(lat),
                   lng: Number(lng),
                 })
@@ -80,6 +91,7 @@ export function Registration({
               notify,
               '店家已登錄，可切換至民眾端查看新據點。',
             )
+            setSaving(false)
             if (done) onRegistered(registeredId)
           }}
         >
@@ -119,29 +131,7 @@ export function Registration({
               placeholder="臺北市／路名／門牌"
             />
           </label>
-          <div className="fields">
-            <label>
-              開始收受時間
-              <input
-                type="time"
-                required
-                value={start}
-                onChange={(event) => setStart(event.target.value)}
-              />
-            </label>
-            <label>
-              結束收受時間
-              <input
-                type="time"
-                required
-                value={end}
-                onChange={(event) => setEnd(event.target.value)}
-              />
-            </label>
-          </div>
-          <p className="mini-note">
-            可設定跨午夜時段；開始與結束時間不可相同。
-          </p>
+          <WeeklyHoursEditor value={hours} onChange={setHours} />
           {renderMap && (
             <div className="registration-map">
               <h3>選擇店家位置</h3>
@@ -187,7 +177,7 @@ export function Registration({
           <p className="mini-note">
             新據點的清運量能、滿溢紀錄與今日申報會保持「未知／未申報」，需後續補齊現場資料。地圖座標僅用於距離與位置顯示。
           </p>
-          <button className="button full" type="submit">
+          <button disabled={saving} className="button full" type="submit">
             完成店家登錄
           </button>
         </form>

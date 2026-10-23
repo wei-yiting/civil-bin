@@ -1,6 +1,36 @@
 import sampleWaste from './assets/sample-waste.svg'
 import { hasCoordinates } from './geo'
 
+export interface DailyHours {
+  closed: boolean
+  start: string
+  end: string
+}
+export type WeeklyHours = DailyHours[]
+export const WEEKDAYS = [
+  '週日',
+  '週一',
+  '週二',
+  '週三',
+  '週四',
+  '週五',
+  '週六',
+] as const
+export const defaultWeeklyHours = (start: string, end: string): DailyHours[] =>
+  WEEKDAYS.map(() => ({ closed: false, start, end }))
+export function validateWeeklyHours(
+  hours: unknown,
+): asserts hours is DailyHours[] {
+  if (
+    !Array.isArray(hours) ||
+    hours.length !== 7 ||
+    hours.some(
+      (h) => !h || typeof h.closed !== 'boolean' || !validHours(h.start, h.end),
+    )
+  )
+    throw new Error('請設定一週七天的有效時段，開始與結束時間不得相同。')
+}
+
 export interface Store {
   id: string
   name: string
@@ -8,6 +38,9 @@ export interface Store {
   address: string
   hoursStart: string
   hoursEnd: string
+  weeklyHours: DailyHours[]
+  pausedOn: string | null
+  pauseReason: string
   enabled: boolean
   x: number
   y: number
@@ -29,12 +62,13 @@ export interface Delivery {
   low: number
   high: number
   photo: string | null
+  photoKey?: string
   source: 'photo' | 'manual'
   status: 'pending' | 'accepted' | 'rejected'
   reason: string
 }
 export interface State {
-  version: 2
+  version: 3
   stores: Store[]
   deliveries: Delivery[]
   claims: Record<string, number>
@@ -85,7 +119,7 @@ export function seedState(): State {
       isDemo: true,
       id: 'a',
       name: '阿明早餐店',
-      area: '民生東路商圈',
+      area: '中山區',
       address: '民生東路商圈示範點 A（非真實地址）',
       x: 25,
       y: 26,
@@ -100,7 +134,7 @@ export function seedState(): State {
       isDemo: true,
       id: 'b',
       name: '惠姐雜貨店',
-      area: '市場周邊',
+      area: '松山區',
       address: '市場周邊示範點 B（非真實地址）',
       x: 67,
       y: 25,
@@ -115,7 +149,7 @@ export function seedState(): State {
       isDemo: true,
       id: 'c',
       name: '小林豆漿',
-      area: '住宅街口',
+      area: '中山區',
       address: '住宅街口示範點 C（非真實地址）',
       x: 54,
       y: 73,
@@ -128,8 +162,62 @@ export function seedState(): State {
     ...s,
     hoursStart: '00:00',
     hoursEnd: '23:59',
+    weeklyHours: defaultWeeklyHours('00:00', '23:59'),
+    pausedOn: null,
+    pauseReason: '',
     enabled: true,
   }))
+  const locations: [string, string, number, number][] = [
+    ['中正區', '公園口', 25.034, 121.518],
+    ['中正區', '書街', 25.043, 121.515],
+    ['大同區', '老街', 25.058, 121.51],
+    ['大同區', '河岸', 25.074, 121.512],
+    ['中山區', '樹蔭', 25.064, 121.525],
+    ['中山區', '晴光', 25.066, 121.53],
+    ['松山區', '綠巷', 25.051, 121.559],
+    ['松山區', '車站邊', 25.05, 121.577],
+    ['大安區', '學院', 25.026, 121.543],
+    ['大安區', '花園', 25.033, 121.535],
+    ['萬華區', '街角', 25.035, 121.499],
+    ['萬華區', '南園', 25.024, 121.497],
+    ['信義區', '山腳', 25.028, 121.568],
+    ['信義區', '廣場', 25.038, 121.566],
+    ['士林區', '文林', 25.09, 121.525],
+    ['士林區', '溪畔', 25.105, 121.529],
+    ['北投區', '溫泉', 25.133, 121.502],
+    ['內湖區', '湖畔', 25.083, 121.578],
+    ['內湖區', '科園', 25.078, 121.565],
+    ['南港區', '東站', 25.053, 121.607],
+    ['文山區', '茶香', 24.993, 121.569],
+  ]
+  locations.forEach(([area, label, lat, lng], index) => {
+    const hoursStart =
+      index % 3 === 0 ? '07:00' : index % 3 === 1 ? '10:00' : '16:00'
+    const hoursEnd = index % 3 === 2 ? '23:00' : '20:00'
+    const weeklyHours = defaultWeeklyHours(hoursStart, hoursEnd)
+    weeklyHours[index % 7]!.closed = true
+    stores.push({
+      id: `demo-${String(index + 1).padStart(2, '0')}`,
+      name: `${label}夥伴小店（示範）`,
+      area,
+      address: `臺北市${area}${label}示範據點（虛構地址，非實際收受店家）`,
+      lat,
+      lng,
+      isDemo: true,
+      hoursStart,
+      hoursEnd,
+      weeklyHours,
+      pausedOn: index === 7 ? date : null,
+      pauseReason: index === 7 ? '今日空間已滿（示範）' : '',
+      enabled: index !== 15,
+      x: 50,
+      y: 50,
+      binDistance: null,
+      publicCapacity: null,
+      collections: null,
+      overflow: null,
+    })
+  })
   const samples: [string, number][] = [
     ['a', 1.3],
     ['a', 2.2],
@@ -158,11 +246,46 @@ export function seedState(): State {
     status: 'accepted',
     reason: '',
   }))
+  const claims: Record<string, number> = {
+    [`${date}:a`]: 22,
+    [`${date}:b`]: 5.4,
+    [`${date}:c`]: 10,
+  }
+  for (const [index, store] of stores.slice(3).entries()) {
+    for (let day = 0; day < 3; day += 1) {
+      const recordDate = dateKey(
+        new Date(Date.parse(`${date}T12:00:00+08:00`) - day * 86_400_000),
+      )
+      let total = 0
+      for (let n = 0; n < 3 + (index % 4); n += 1) {
+        const liters = round(1.2 + ((index * 3 + n + day) % 12) * 0.7)
+        total += liters
+        deliveries.push({
+          id: `seed:${recordDate}:${store.id}:${n}`,
+          storeId: store.id,
+          date: recordDate,
+          createdAt: `${recordDate}T${String(9 + n).padStart(2, '0')}:00:00+08:00`,
+          kind: n % 2 ? '食物包裝' : '飲料杯／容器',
+          liters,
+          low: round(liters - 0.6),
+          high: round(liters + 0.6),
+          photo: sampleWaste,
+          source: 'photo',
+          status: 'accepted',
+          reason: '',
+        })
+      }
+      if (index % 6 !== 0 || day > 0)
+        claims[`${recordDate}:${store.id}`] = round(
+          total * (index % 5 === 0 ? 1.7 : 1.03),
+        )
+    }
+  }
   return {
-    version: 2,
+    version: 3,
     stores,
     deliveries,
-    claims: { [`${date}:a`]: 22, [`${date}:b`]: 5.4, [`${date}:c`]: 10 },
+    claims,
     reviews: {},
   }
 }
@@ -314,14 +437,11 @@ export function capacityAnalysis(
   }
 }
 
-export function isOpen(store: Store, now = new Date()): boolean {
-  if (!store.enabled) return false
-  const parse = (time: string) =>
-    /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
-      ? Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
-      : NaN
-  const start = parse(store.hoursStart)
-  const end = parse(store.hoursEnd)
+const minutes = (time: string) =>
+  Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
+function taipeiTime(now: Date) {
+  const date = dateKey(now)
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay()
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Taipei',
     hour: '2-digit',
@@ -331,11 +451,39 @@ export function isOpen(store: Store, now = new Date()): boolean {
   const current =
     Number(parts.find((p) => p.type === 'hour')!.value) * 60 +
     Number(parts.find((p) => p.type === 'minute')!.value)
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start === end)
-    return false
-  return start < end
-    ? current >= start && current < end
-    : current >= start || current < end
+  return { date, weekday, current }
+}
+export function todayHoursLabel(store: Store, now = new Date()): string {
+  const { date, weekday, current } = taipeiTime(now)
+  if (!store.enabled) return '暫停合作收受'
+  if (store.pausedOn === date)
+    return `今日已停收${store.pauseReason ? `：${store.pauseReason}` : ''}`
+  const hours = store.weeklyHours[weekday]!
+  const previous = store.weeklyHours[(weekday + 6) % 7]!
+  if (
+    !previous.closed &&
+    minutes(previous.start) > minutes(previous.end) &&
+    current < minutes(previous.end)
+  )
+    return `前一日延續收受至 ${previous.end}${hours.closed ? '；今日其餘時間休息' : `；今日 ${hours.start}–${hours.end}`}`
+  return hours.closed
+    ? '今日休息'
+    : `${hours.start}–${hours.end}${minutes(hours.start) > minutes(hours.end) ? '（隔日）' : ''}`
+}
+export function isOpen(store: Store, now = new Date()): boolean {
+  const { date, weekday, current } = taipeiTime(now)
+  if (!store.enabled || store.pausedOn === date) return false
+  const today = store.weeklyHours[weekday]!
+  const previous = store.weeklyHours[(weekday + 6) % 7]!
+  const start = minutes(today.start),
+    end = minutes(today.end)
+  const priorStart = minutes(previous.start),
+    priorEnd = minutes(previous.end)
+  return (
+    (!today.closed &&
+      (start < end ? current >= start && current < end : current >= start)) ||
+    (!previous.closed && priorStart > priorEnd && current < priorEnd)
+  )
 }
 
 export function reviewKey(
@@ -349,7 +497,7 @@ export function reviewKey(
       r.id,
       r.status,
       r.source,
-      r.photo,
+      r.photoKey ?? r.photo,
       r.liters,
       r.low,
       r.high,
@@ -398,6 +546,7 @@ export const TAIPEI_DISTRICTS = [
   '文山區',
 ] as const
 export interface RegistrationInput {
+  weeklyHours?: DailyHours[]
   name: string
   address: string
   area: string
@@ -430,6 +579,7 @@ export function registerStore(state: State, input: RegistrationInput): Store {
     throw new Error('請選擇臺北市範圍內的有效座標。')
   if (!validHours(input.hoursStart, input.hoursEnd))
     throw new Error('請設定不同且有效的開始、結束時間。')
+  if (input.weeklyHours !== undefined) validateWeeklyHours(input.weeklyHours)
   if (
     state.stores.some(
       (s) => s.name.trim() === name && s.address.trim() === address,
@@ -453,6 +603,11 @@ export function registerStore(state: State, input: RegistrationInput): Store {
     isDemo: false,
     hoursStart: input.hoursStart,
     hoursEnd: input.hoursEnd,
+    weeklyHours: (
+      input.weeklyHours ?? defaultWeeklyHours(input.hoursStart, input.hoursEnd)
+    ).map((h) => ({ ...h })),
+    pausedOn: null,
+    pauseReason: '',
     enabled: true,
     x: 50,
     y: 50,
@@ -470,7 +625,7 @@ export function migrateState(raw: unknown): State {
   if (!raw || typeof raw !== 'object') return fail()
   const state = raw as State
   if (
-    !([1, 2] as number[]).includes(state.version) ||
+    !([1, 2, 3] as number[]).includes(state.version) ||
     !Array.isArray(state.stores) ||
     !state.stores.length ||
     !Array.isArray(state.deliveries) ||
@@ -482,7 +637,8 @@ export function migrateState(raw: unknown): State {
     Array.isArray(state.reviews)
   )
     return fail()
-  const demos = seedState().stores
+  const seed = seedState()
+  const demos = seed.stores
   const ids = new Set<string>()
   const stores = state.stores.map((s) => {
     if (
@@ -497,6 +653,18 @@ export function migrateState(raw: unknown): State {
       !validHours(s.hoursStart, s.hoursEnd)
     )
       return fail()
+    if (state.version === 3) {
+      validateWeeklyHours(s.weeklyHours)
+      if (
+        !(
+          s.pausedOn === null ||
+          (typeof s.pausedOn === 'string' &&
+            /^\d{4}-\d{2}-\d{2}$/.test(s.pausedOn))
+        ) ||
+        typeof s.pauseReason !== 'string'
+      )
+        return fail()
+    }
     ids.add(s.id)
     const demo = demos.find(
       (d) => d.id === s.id && d.name === s.name && d.address === s.address,
@@ -510,8 +678,15 @@ export function migrateState(raw: unknown): State {
     return {
       ...s,
       ...coordinates,
+      area: demo && state.version < 3 ? demo.area : s.area,
+      weeklyHours:
+        state.version === 3
+          ? s.weeklyHours.map((h) => ({ ...h }))
+          : defaultWeeklyHours(s.hoursStart, s.hoursEnd),
+      pausedOn: state.version === 3 ? s.pausedOn : null,
+      pauseReason: state.version === 3 ? s.pauseReason : '',
       isDemo:
-        state.version === 2 && typeof s.isDemo === 'boolean' ? s.isDemo : true,
+        state.version >= 2 && typeof s.isDemo === 'boolean' ? s.isDemo : true,
       x: Number.isFinite(s.x) ? s.x : 50,
       y: Number.isFinite(s.y) ? s.y : 50,
       binDistance: amount(s.binDistance),
@@ -546,5 +721,27 @@ export function migrateState(raw: unknown): State {
     Object.values(state.reviews).some((v) => typeof v !== 'string')
   )
     return fail()
-  return { ...state, version: 2, stores }
+  const expand =
+    state.version < 3 &&
+    ['a', 'b', 'c'].every((id) => stores.some((s) => s.id === id && s.isDemo))
+  const missing = expand ? demos.filter((s) => !ids.has(s.id)) : []
+  const missingIds = new Set(missing.map((s) => s.id))
+  const deliveryIds = new Set(state.deliveries.map((r) => r.id))
+  const deliveries = [
+    ...state.deliveries,
+    ...seed.deliveries.filter(
+      (r) => missingIds.has(r.storeId) && !deliveryIds.has(r.id),
+    ),
+  ]
+  const claims = { ...state.claims }
+  for (const [key, value] of Object.entries(seed.claims))
+    if (missingIds.has(key.slice(11)) && !Object.hasOwn(claims, key))
+      claims[key] = value
+  return {
+    ...state,
+    version: 3,
+    stores: [...stores, ...missing],
+    deliveries,
+    claims,
+  }
 }

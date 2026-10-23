@@ -152,8 +152,8 @@ test('清運情境重算、過去日期與未拍照補登', async ({ page }) => 
     '未拍照代收垃圾',
   )
   await expect(page.getByTestId('photo-total')).toContainText('8.4')
-  await page.getByLabel('開始收受時間').fill('00:00')
-  await page.getByLabel('結束收受時間').fill('00:01')
+  await page.getByLabel('週五開始時間', { exact: true }).fill('00:00')
+  await page.getByLabel('週五結束時間', { exact: true }).fill('00:01')
   await page.getByRole('button', { name: '儲存收受設定' }).click()
   await page.getByRole('button', { name: '民眾端', exact: true }).click()
   await expect(page.getByTestId('selected-store')).toContainText('非開放時段')

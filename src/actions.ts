@@ -2,13 +2,13 @@ import type { State } from './domain'
 import { updateData } from './persistence'
 import type { Notify } from './App'
 
-export function save(
+export async function save(
   change: (draft: State) => void,
   notify: Notify,
   success: string,
-): boolean {
+): Promise<boolean> {
   try {
-    updateData(change)
+    await updateData(change)
     notify(success)
     return true
   } catch (e) {

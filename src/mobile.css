@@ -1155,3 +1155,56 @@
   font-size: 10px;
   color: #7e9271;
 }
+
+.weekly-hours {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  margin: 20px 0;
+}
+.weekly-hours legend {
+  font-weight: 700;
+}
+.weekly-row {
+  border-top: 1px solid var(--line, #e4e7df);
+  padding: 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.weekly-row .check-label {
+  margin: 0;
+  white-space: nowrap;
+}
+.weekly-times {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.weekly-times label {
+  margin: 0;
+}
+.weekly-times input {
+  padding: 8px 4px;
+  min-width: 0;
+  width: 102px;
+}
+.daily-pause {
+  background: #faf2e8;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

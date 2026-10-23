@@ -2,15 +2,15 @@
 
 驗證日期：2026-10-24（Asia/Taipei）。執行環境：macOS arm64、Node.js 22.23.4。
 
-| 檢查                   | 結果                                   |
-| ---------------------- | -------------------------------------- |
-| `npm run format:check` | 通過                                   |
-| `npm run lint`         | 通過，無警告                           |
-| `npm test`             | 32 個 Vitest 測試通過                  |
-| `npm run build`        | TypeScript、Vite 與單檔 HTML 產生成功  |
-| `npm run test:e2e`     | 24 個 Playwright 測試通過，約 1.1 分鐘 |
+| 檢查                   | 結果                                                |
+| ---------------------- | --------------------------------------------------- |
+| `npm run format:check` | 通過                                                |
+| `npm run lint`         | 通過，無警告                                        |
+| `npm test`             | 45 個 Vitest 測試通過                               |
+| `npm run build`        | TypeScript、Vite 與單檔 HTML 產生成功               |
+| `npm run test:e2e`     | 28 個 Playwright 測試通過（桌機與手機各 14 個案例） |
 
-瀏覽器測試包含桌機與 iPhone 13 尺寸的 Chromium，各執行 12 個案例；本機 retries 為 0。這不是實體 iPhone／Safari 測試。Build 有單一 bundle 大於 500 kB 的提示，目前保留單檔 HTML 的相容產出。
+瀏覽器測試包含桌機與 iPhone 13 尺寸的 Chromium，各執行 14 個案例；本機 retries 為 0。這不是實體 iPhone／Safari 測試。Build 有單一 bundle 大於 500 kB 的提示，目前保留單檔 HTML 的相容產出。
 
 ## 實際驗證的流程
 
@@ -37,6 +37,24 @@
 - 原版「筆電打不開」尚未重現；詳見 [原版診斷紀錄](diagnosis.md)。未把工具禁止 `file://` 視為使用者的故障原因。
 - 雙擊本機 HTML、實體手機相機授權、Safari／Firefox 與不同裝置同步未經本次驗證。
 - AI 體積估算、合作店家與清運政策數據是示範；公共清潔箱位置來自官方開放資料。
-- 角色業務資料儲存在同一瀏覽器，沒有帳號權限或跨裝置資料庫。API 僅提供官方清潔箱資料。
+- 本機模式業務資料儲存在同一瀏覽器；Supabase 模式具備登入、權限、private 照片儲存與同步。實際雲端專案已填入 gitignored env，使用者已執行初始化 SQL 並啟用匿名登入，實際讀取 24 店／291 筆示範交付／62 筆日申報成功。店家與市府帳號授權、Realtime 與跨裝置完整流程仍待驗收。
 - GitHub Pages 使用內嵌官方快照；Vite 開發伺服器與 Vercel API 可抓取官方來源。Vercel 正式部署尚未驗證。
 - 截圖使用虛構示範資料與替代圖磚，不包含使用者實際照片。
+
+## v0.3 每週時段、當日停收與 DB
+
+- 新增 24 家虛構合作點，涵蓋 12 行政區，291 筆多日示範交付。舊資料升級保留原申報與查核，缺少的示範店只補一次。
+- 週一至週日獨立時段／休息日、前一晚跨夜尾段、臺北日期停收及換日恢復均有單元測試。
+- 瀏覽器驗證每週設定重載保留、另一分頁立即看到停收與原因、解除後恢復原時段，以及換日不延續當日停收。
+- `npm run test:db` 使用隔離 PostgreSQL 16，實際套用 migration 與測試 SQL。民眾送件、本人店家確認、單次處理、每日申報、舊值衝突、停收阻擋、市府查核、直接寫入禁止均通過。Auth 與 Storage 使用簡化 schema stub，這不代表完整 Supabase 服務已驗收。
+- Supabase transport 測試涵蓋交易拒絕、照片上傳後失敗清理、短效網址不回存與穩定查核識別。
+- `.env.local` 已透過 `git check-ignore` 確認忽略；`.env.example` 只含空白設定與說明。
+- 瀏覽器自動化使用專用 5196／4175 連接埠，明確以空白 Supabase env 啟動，避免測試寫入使用者雲端專案。
+- 市府清運情境只在畫面試算，不改寫共享店家或官方資料；資料及差異提供評估參考，不能直接判斷設施配置或違規。
+
+### 使用者 Supabase 實測
+
+- 匿名登入成功，`civil_snapshot` 回傳 citizen、24 家店、291 筆示範交付、62 筆日申報。
+- 互動瀏覽器已顯示「Supabase 已連線・跨裝置同步」及 24 店地圖；此訊息代表連線，跨裝置完整交付仍需授權帳號驗證。
+- 真實 private Storage：測試 PNG 上傳、短效連結讀取及未引用測試圖片清理成功；未改動示範交付量。
+- 真實 DB 權限：匿名使用者直接寫入 civil_profiles 升級 city 被拒絕。

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  defaultWeeklyHours,
+  validateWeeklyHours,
+  todayHoursLabel,
   migrateState,
   registerStore,
   aggregate,
@@ -43,7 +46,7 @@ describe('每日跨角色資料', () => {
   })
   it('保留原版三店與今日照片及申報值', () => {
     const state = seedState()
-    expect(state.stores.map((s) => s.name)).toEqual([
+    expect(state.stores.slice(0, 3).map((s) => s.name)).toEqual([
       '阿明早餐店',
       '惠姐雜貨店',
       '小林豆漿',
@@ -149,6 +152,7 @@ describe('估算與營業時間', () => {
       ...seedState().stores[0]!,
       hoursStart: '09:00',
       hoursEnd: '18:00',
+      weeklyHours: defaultWeeklyHours('09:00', '18:00'),
     }
     expect(isOpen(store, new Date('2026-10-23T01:00:00Z'))).toBe(true)
     expect(isOpen(store, new Date('2026-10-23T10:00:00Z'))).toBe(false)
@@ -157,7 +161,7 @@ describe('估算與營業時間', () => {
     ).toBe(false)
     expect(
       isOpen(
-        { ...store, hoursStart: '22:00', hoursEnd: '02:00' },
+        { ...store, weeklyHours: defaultWeeklyHours('22:00', '02:00') },
         new Date('2026-10-23T17:00:00Z'),
       ),
     ).toBe(true)
@@ -177,7 +181,7 @@ describe('註冊與資料遷移', () => {
   it('註冊新店保留未知量能且不建立假申報', () => {
     const state = seedState()
     const store = registerStore(state, input)
-    expect(state.stores).toHaveLength(3)
+    expect(state.stores).toHaveLength(24)
     expect(store).toMatchObject({
       ...input,
       isDemo: false,
@@ -191,7 +195,7 @@ describe('註冊與資料遷移', () => {
     expect(classification(state, store.id).level).toBe('missing')
     expect(Number.isNaN(capacityAnalysis(state, store.id).capacity)).toBe(true)
     expect(migrateState(JSON.parse(JSON.stringify(state))).stores).toHaveLength(
-      4,
+      25,
     )
   })
   it('拒絕空欄、無效時段、臺北範圍外及重複店家', () => {
@@ -226,13 +230,13 @@ describe('註冊與資料遷移', () => {
     }
     old.stores.push({ ...old.stores[0]!, id: 'legacy', name: '未知舊店' })
     const migrated = migrateState(old)
-    expect(migrated.version).toBe(2)
+    expect(migrated.version).toBe(3)
     expect(migrated.stores[0]).toMatchObject({
       lat: 25.0588,
       lng: 121.5434,
       isDemo: true,
     })
-    expect(migrated.stores[3]).toMatchObject({
+    expect(migrated.stores.at(-1)).toMatchObject({
       lat: null,
       lng: null,
       isDemo: true,
@@ -244,5 +248,87 @@ describe('註冊與資料遷移', () => {
   it('拒絕損毀或未支援資料版本', () => {
     expect(() => migrateState({ ...seedState(), version: 99 })).toThrow()
     expect(() => migrateState({ ...seedState(), stores: [] })).toThrow()
+  })
+})
+
+describe('每週時段與當日停收', () => {
+  it('七天獨立時段且按臺北星期判斷休息日', () => {
+    const store = {
+      ...seedState().stores[0]!,
+      weeklyHours: defaultWeeklyHours('09:00', '18:00'),
+    }
+    store.weeklyHours[6]!.closed = true
+    const saturday = new Date('2026-10-24T02:00:00Z')
+    expect(isOpen(store, saturday)).toBe(false)
+    expect(todayHoursLabel(store, saturday)).toBe('今日休息')
+    expect(isOpen(store, new Date('2026-10-23T02:00:00Z'))).toBe(true)
+  })
+  it('當日停收只作用於臺北當日，不永久停掉未來日期', () => {
+    const store = {
+      ...seedState().stores[0]!,
+      pausedOn: '2026-10-24',
+      pauseReason: '空間已滿',
+    }
+    expect(isOpen(store, new Date('2026-10-23T16:00:00Z'))).toBe(false)
+    expect(todayHoursLabel(store, new Date('2026-10-23T16:00:00Z'))).toContain(
+      '空間已滿',
+    )
+    expect(isOpen(store, new Date('2026-10-24T16:00:00Z'))).toBe(true)
+  })
+  it('跨夜看前一天時段，不把今日晚間時段誤套到今日凌晨', () => {
+    const store = {
+      ...seedState().stores[0]!,
+      weeklyHours: defaultWeeklyHours('09:00', '18:00'),
+    }
+    store.weeklyHours[5] = { closed: false, start: '22:00', end: '02:00' }
+    store.weeklyHours[6]!.closed = true
+    expect(isOpen(store, new Date('2026-10-23T15:00:00Z'))).toBe(true)
+    expect(isOpen(store, new Date('2026-10-23T17:00:00Z'))).toBe(true)
+    expect(todayHoursLabel(store, new Date('2026-10-23T17:00:00Z'))).toContain(
+      '前一日延續收受至 02:00',
+    )
+    expect(isOpen(store, new Date('2026-10-23T18:00:00Z'))).toBe(false)
+    expect(isOpen(store, new Date('2026-10-22T17:00:00Z'))).toBe(false)
+  })
+  it('拒絕不完整、無效及零長度時段', () => {
+    expect(() => validateWeeklyHours([])).toThrow()
+    const hours = defaultWeeklyHours('10:00', '10:00')
+    expect(() => validateWeeklyHours(hours)).toThrow()
+    hours[0]!.start = '25:00'
+    expect(() => validateWeeklyHours(hours)).toThrow()
+  })
+  it('24 店涵蓋十二行政區，新增店有多日交付且不偽造公共量能', () => {
+    const state = seedState()
+    expect(state.stores).toHaveLength(24)
+    expect(new Set(state.stores.slice(3).map((s) => s.area)).size).toBe(12)
+    for (const store of state.stores.slice(3)) {
+      expect(store.isDemo).toBe(true)
+      expect(store.address).toContain('虛構')
+      expect(
+        state.deliveries.filter((r) => r.storeId === store.id).length,
+      ).toBeGreaterThanOrEqual(9)
+      expect(store.publicCapacity).toBeNull()
+    }
+  })
+  it('舊三店升級只補缺少示範店，保留舊證據並且再次載入不重複', () => {
+    const seed = seedState()
+    const original = {
+      ...seed,
+      version: 2,
+      stores: seed.stores.slice(0, 3),
+      deliveries: seed.deliveries.filter((r) =>
+        ['a', 'b', 'c'].includes(r.storeId),
+      ),
+      claims: { [`${dateKey()}:a`]: 99 },
+      reviews: { old: '已查核' },
+    }
+    original.stores[0]!.enabled = false
+    const migrated = migrateState(original)
+    expect(migrated.stores).toHaveLength(24)
+    expect(migrated.stores[0]!.enabled).toBe(false)
+    expect(migrated.claims[`${dateKey()}:a`]).toBe(99)
+    expect(migrated.deliveries.slice(0, 12)).toEqual(original.deliveries)
+    expect(migrated.reviews.old).toBe('已查核')
+    expect(migrateState(migrated)).toEqual(migrated)
   })
 })

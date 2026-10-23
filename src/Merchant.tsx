@@ -1,8 +1,10 @@
+import { useNow } from './useNow'
 import { save } from './actions'
 import { useState } from 'react'
 import { Registration } from './Registration'
 import { GeoMap } from './GeoMap'
-import { aggregate, dateKey } from './domain'
+import { aggregate, dateKey, validateWeeklyHours } from './domain'
+import { WeeklyHoursEditor } from './WeeklyHoursEditor'
 import type { Delivery, Store } from './domain'
 import { Metric, StoreStatus } from './ui'
 import type { PageProps } from './ui'
@@ -20,9 +22,19 @@ const tabs = [
 ] as const
 
 export function Merchant({ data, notify }: PageProps) {
-  const [selected, setSelected] = useState(data.stores[0].id)
+  const [selected, setSelected] = useState(data.stores[0]?.id ?? '')
   const [registering, setRegistering] = useState(false)
-  const store = data.stores.find((s) => s.id === selected)!
+  const store = data.stores.find((s) => s.id === selected) ?? data.stores[0]
+  if (!store)
+    return (
+      <Registration
+        notify={notify}
+        onRegistered={(id) => setSelected(id)}
+        renderMap={(position, onPick) => (
+          <GeoMap picked={position} onPick={onPick} />
+        )}
+      />
+    )
   return (
     <>
       <header className="page-header">
@@ -100,9 +112,6 @@ export function Merchant({ data, notify }: PageProps) {
 function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
   const today = dateKey()
   const [tab, setTab] = useState<Delivery['status']>('pending')
-  const [enabled, setEnabled] = useState(store.enabled)
-  const [start, setStart] = useState(store.hoursStart)
-  const [end, setEnd] = useState(store.hoursEnd)
   const [claim, setClaim] = useState(
     String(data.claims[`${today}:${store.id}`] ?? ''),
   )
@@ -113,8 +122,8 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
     (r) => r.storeId === store.id && r.date === today,
   )
   const shown = records.filter((r) => r.status === tab)
-  function decide(id: string, status: 'accepted' | 'rejected') {
-    save(
+  async function decide(id: string, status: 'accepted' | 'rejected') {
+    await save(
       (draft) => {
         const record = draft.deliveries.find(
           (r) => r.id === id && r.storeId === store.id && r.date === dateKey(),
@@ -249,7 +258,7 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
               只記錄實際代收的行人垃圾；手動登記不等於民眾獨立照片佐證。
             </p>
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault()
                 const value = Number(manual)
                 if (
@@ -261,7 +270,7 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
                   notify('請輸入大於 0 且不超過 999 公升的收受量。')
                   return
                 }
-                const done = save(
+                const done = await save(
                   (draft) => {
                     draft.deliveries.unshift({
                       id: crypto.randomUUID(),
@@ -303,74 +312,17 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
           </div>
         </section>
         <div className="merchant-settings">
-          <section className="card">
-            <div className="card-head">
-              <div>
-                <span className="eyebrow">02 / 收受服務</span>
-                <h2>開放時段</h2>
-              </div>
-              <StoreStatus store={store} />
-            </div>
-            <div className="card-body">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (!start || !end || start === end) {
-                    notify('開始與結束時間必須不同；跨午夜時段可直接設定。')
-                    return
-                  }
-                  save(
-                    (draft) => {
-                      const target = draft.stores.find((s) => s.id === store.id)
-                      if (!target) throw new Error('找不到此店家，請重新載入。')
-                      Object.assign(target, {
-                        enabled,
-                        hoursStart: start,
-                        hoursEnd: end,
-                      })
-                    },
-                    notify,
-                    '收受設定已儲存，民眾端據點狀態已同步。',
-                  )
-                }}
-              >
-                <label className="check-label">
-                  <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={(e) => setEnabled(e.target.checked)}
-                  />
-                  開放收受
-                </label>
-                <div className="fields">
-                  <label>
-                    開始收受時間
-                    <input
-                      type="time"
-                      required
-                      value={start}
-                      onChange={(e) => setStart(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    結束收受時間
-                    <input
-                      type="time"
-                      required
-                      value={end}
-                      onChange={(e) => setEnd(e.target.value)}
-                    />
-                  </label>
-                </div>
-                <p className="mini-note">
-                  支援跨午夜時段；結束時間起停止收受。示範預設為 00:00–23:59。
-                </p>
-                <button className="button secondary full" type="submit">
-                  儲存收受設定
-                </button>
-              </form>
-            </div>
-          </section>
+          <ServiceSettings
+            key={JSON.stringify([
+              store.id,
+              store.enabled,
+              store.weeklyHours,
+              store.pausedOn,
+              store.pauseReason,
+            ])}
+            store={store}
+            notify={notify}
+          />
           <section className="card">
             <div className="card-head">
               <div>
@@ -384,7 +336,7 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
                 申報額外代收的行人垃圾，自有營業垃圾不列入此申報及補助範圍。此原型不計算或發放補助。
               </p>
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault()
                   const value = Number(claim)
                   if (
@@ -396,7 +348,7 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
                     notify('請輸入 0 至 999 公升；沒有代收時請明確填 0。')
                     return
                   }
-                  save(
+                  await save(
                     (draft) => {
                       draft.claims[`${dateKey()}:${store.id}`] = value
                     },
@@ -430,5 +382,125 @@ function MerchantStore({ store, data, notify }: PageProps & { store: Store }) {
         </div>
       </div>
     </>
+  )
+}
+
+function ServiceSettings({
+  store,
+  notify,
+}: {
+  store: Store
+  notify: PageProps['notify']
+}) {
+  useNow()
+  const [hours, setHours] = useState(() => structuredClone(store.weeklyHours))
+  const [enabled, setEnabled] = useState(store.enabled)
+  const [reason, setReason] = useState(store.pauseReason || '收受容量已滿')
+  const [busy, setBusy] = useState(false)
+  const paused = store.pausedOn === dateKey()
+  async function pauseToday() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await save(
+        (draft) => {
+          const target = draft.stores.find((s) => s.id === store.id)
+          if (!target) throw new Error('找不到此店家，請重新載入。')
+          target.pausedOn = paused ? null : dateKey()
+          target.pauseReason = paused ? '' : reason.trim() || '店家臨時停收'
+        },
+        notify,
+        paused
+          ? '已解除今日停收，依每週時段開放。'
+          : '今日已停止收受，民眾與市府端狀態已同步。',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="card">
+      <div className="card-head">
+        <div>
+          <span className="eyebrow">02 / 收受服務</span>
+          <h2>每週時段與今日停收</h2>
+        </div>
+        <StoreStatus store={store} />
+      </div>
+      <div className="card-body">
+        <div className="daily-pause" data-testid="daily-pause">
+          <h3>{paused ? '今天已臨時停收' : '今天還能繼續收受嗎？'}</h3>
+          <p className="mini-note">
+            臨時停收只影響臺北時間今天，隔日恢復依每週時段判斷；不會修改每週設定，也不會取消已送出的交付。
+          </p>
+          {!paused && (
+            <label>
+              今日停收原因
+              <input
+                value={reason}
+                maxLength={120}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </label>
+          )}
+          {paused && <p>停收原因：{store.pauseReason || '店家臨時停收'}</p>}
+          <button
+            type="button"
+            disabled={busy}
+            className={`button full ${paused ? 'secondary' : 'danger'}`}
+            onClick={pauseToday}
+          >
+            {busy ? '正在同步…' : paused ? '解除今日停收' : '今天停止收受'}
+          </button>
+        </div>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (busy) return
+            try {
+              validateWeeklyHours(hours)
+            } catch (error) {
+              notify((error as Error).message)
+              return
+            }
+            setBusy(true)
+            try {
+              await save(
+                (draft) => {
+                  const target = draft.stores.find((s) => s.id === store.id)
+                  if (!target) throw new Error('找不到此店家，請重新載入。')
+                  target.enabled = enabled
+                  target.weeklyHours = structuredClone(hours)
+                },
+                notify,
+                '收受設定已儲存，民眾端據點狀態已同步。',
+              )
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+            />
+            開放收受
+          </label>
+          <p className="mini-note">
+            取消開放會持續停用服務，直到你重新開放。僅當天額滿請使用上方「今天停止收受」。
+          </p>
+          <WeeklyHoursEditor value={hours} onChange={setHours} />
+          <button
+            disabled={busy}
+            className="button secondary full"
+            type="submit"
+          >
+            {busy ? '正在同步…' : '儲存收受設定'}
+          </button>
+        </form>
+      </div>
+    </section>
   )
 }
